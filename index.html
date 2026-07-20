@@ -399,7 +399,6 @@
         const attDoc = await attRef.get();
         if(!attDoc.exists) {
             let initialData = { class: selectedClass, subject: selectedSubject, date: today, records: {} };
-            // Khởi tạo mảng rỗng thay vì false
             studentsList.forEach(hs => initialData.records[hs.id] = []);
             await attRef.set(initialData);
         }
@@ -412,11 +411,9 @@
             
             studentsList.forEach(hs => {
                 let studentRecords = data[hs.id] || [];
-                // Hỗ trợ ngược dữ liệu cũ (nếu có bản ghi dạng boolean)
                 if(typeof studentRecords === 'boolean') studentRecords = studentRecords ? [{time: 'N/A', ts: 0}] : [];
                 
                 const isPresent = studentRecords.length > 0;
-                
                 let timeBadges = '';
                 if(isPresent) {
                     timeBadges = studentRecords.map(r => `<span class="time-badge">${r.time}</span>`).join('');
@@ -443,7 +440,6 @@
 
     async function manualUpdateStatus(studentId, turnOn) {
         const attRef = db.collection('attendance').doc(currentAttendanceDocId);
-        
         if (turnOn) {
             const nowMs = Date.now();
             const nowStr = new Date().toLocaleTimeString('vi-VN', {hour: '2-digit', minute:'2-digit'});
@@ -455,13 +451,12 @@
             records.push({ time: nowStr + ' (Bù)', ts: nowMs });
             await attRef.update({ [`records.${studentId}`]: records });
         } else {
-            // Nếu đánh vắng thủ công, xóa sạch mảng
             await attRef.update({ [`records.${studentId}`]: [] });
         }
     }
 
     // ==========================================
-    // 5. CHỨC NĂNG QUÉT QR (ĐA MỐC THỜI GIAN)
+    // 5. CHỨC NĂNG QUÉT QR (CAMERA SAU MẶC ĐỊNH & KIỂM TRA 30 PHÚT)
     // ==========================================
     let isScannerRunning = false;
     function toggleScanner() {
@@ -471,7 +466,12 @@
         } else {
             qrBox.style.display = 'block';
             html5QrcodeScanner = new Html5QrcodeScanner("qr-reader", { 
-                fps: 15, qrbox: {width: 250, height: 250}, videoConstraints: { advanced: [{ focusMode: "continuous" }] }
+                fps: 15, 
+                qrbox: {width: 250, height: 250}, 
+                videoConstraints: { 
+                    facingMode: "environment", // Ưu tiên chọn camera sau
+                    advanced: [{ focusMode: "continuous" }] 
+                }
             }, false);
             html5QrcodeScanner.render(onScanSuccess);
             isScannerRunning = true;
