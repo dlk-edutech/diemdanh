@@ -3,12 +3,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Hệ Thống Điểm Danh Trực Tuyến</title>
-    <!-- Firebase App (the core Firebase SDK) -->
+    <!-- Firebase App & Firestore -->
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-    <!-- Firebase Firestore -->
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
     <!-- Thư viện quét QR -->
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    <!-- Thư viện đọc/ghi file Excel -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    
     <style>
         :root { --primary: #2563eb; --bg: #f3f4f6; --text: #1f2937; }
         body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; }
@@ -18,11 +20,12 @@
         .active { display: block; }
         .form-group { margin-bottom: 15px; }
         label { display: block; font-weight: bold; margin-bottom: 5px; }
-        input, select, textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        input, select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
         button { width: 100%; padding: 10px; background: var(--primary); color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; margin-top: 10px; }
         button:hover { opacity: 0.9; }
         button.logout { background: #dc2626; margin-top: 20px; }
         button.action { width: auto; padding: 5px 15px; background: #10b981; }
+        button.secondary { background: #6b7280; margin-top: 0; height: 100%; }
         table { width: 100%; border-collapse: collapse; margin-top: 15px; }
         th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
         th { background: #f8fafc; }
@@ -32,6 +35,9 @@
         .nav-tabs { display: flex; gap: 10px; margin-bottom: 20px; }
         .nav-tabs button { background: #e5e7eb; color: var(--text); }
         .nav-tabs button.active-tab { background: var(--primary); color: white; }
+        .excel-guide { background: #fdf2f8; padding: 10px; border-radius: 5px; font-size: 0.9em; margin-bottom: 10px; border: 1px dashed #f472b6; }
+        .settings-section { margin-top: 30px; border-top: 1px solid #ccc; padding-top: 15px; background: #f9fafb; padding: 15px; border-radius: 8px;}
+        .flex-row { display: flex; gap: 10px; align-items: center; }
     </style>
 </head>
 <body>
@@ -39,7 +45,7 @@
 <div class="container">
     <h1 id="main-title">Hệ Thống Điểm Danh</h1>
 
-    <!-- MÀN HÌNH ĐĂNG NHẬP (Lựa chọn vai trò) -->
+    <!-- MÀN HÌNH ĐĂNG NHẬP -->
     <div id="login-screen" class="screen active">
         <div class="nav-tabs">
             <button class="active-tab" onclick="switchLogin('teacher')">Giáo viên</button>
@@ -48,12 +54,8 @@
         </div>
         
         <div class="form-group">
-            <label id="lbl-username">Tài khoản (Mã GV / Mã CMHS)</label>
-            <input type="text" id="username" placeholder="Nhập mã đăng nhập">
-        </div>
-        <div class="form-group" id="group-password">
-            <label>Mật khẩu</label>
-            <input type="password" id="password" placeholder="Nhập mật khẩu">
+            <label id="lbl-username">Mã đăng nhập (Mã GV / Mã CMHS)</label>
+            <input type="text" id="username" placeholder="Nhập mã của bạn...">
         </div>
         <button onclick="handleLogin()">Đăng Nhập</button>
     </div>
@@ -63,14 +65,24 @@
         <h2>Khu Vực Quản Trị</h2>
         
         <h3>1. Nạp danh sách Học Sinh</h3>
-        <p><i>Cú pháp: Mã HS, Lớp, Họ Tên, Mã CMHS</i></p>
-        <textarea id="data-students" rows="5" placeholder="Ví dụ:&#10;HS01, 10A1, Nguyễn Văn A, CMHS01&#10;HS02, 10A1, Trần Thị B, CMHS02"></textarea>
-        <button class="action" onclick="importStudents()">Lưu Danh Sách Học Sinh</button>
+        <div class="excel-guide">
+            <strong>Cấu trúc file (Bỏ qua dòng tiêu đề):</strong> Cột A: Mã HS | Cột B: Lớp | Cột C: Họ Tên | Cột D: Mã CMHS
+        </div>
+        <div class="flex-row">
+            <input type="file" id="excel-students" accept=".xlsx, .xls" style="flex: 1;">
+            <button class="action secondary" onclick="downloadStudentSample()">📥 Tải File Mẫu</button>
+        </div>
+        <button class="action" onclick="importStudentsFromExcel()">Nạp Danh Sách Học Sinh</button>
 
         <h3 style="margin-top: 30px;">2. Nạp danh sách Giáo Viên</h3>
-        <p><i>Cú pháp: Mã Đăng Nhập, Mật khẩu, Môn dạy (cách nhau bằng -), Lớp dạy (cách nhau bằng -)</i></p>
-        <textarea id="data-teachers" rows="5" placeholder="Ví dụ:&#10;GV01, 123456, Toán-Lý, 10A1-10A2"></textarea>
-        <button class="action" onclick="importTeachers()">Lưu Danh Sách Giáo Viên</button>
+        <div class="excel-guide">
+            <strong>Cấu trúc file (Bỏ qua dòng tiêu đề):</strong> Cột A: Mã GV | Cột B: Môn dạy (cách nhau dấu phẩy) | Cột C: Lớp dạy (cách nhau dấu phẩy)
+        </div>
+        <div class="flex-row">
+            <input type="file" id="excel-teachers" accept=".xlsx, .xls" style="flex: 1;">
+            <button class="action secondary" onclick="downloadTeacherSample()">📥 Tải File Mẫu</button>
+        </div>
+        <button class="action" onclick="importTeachersFromExcel()">Nạp Danh Sách Giáo Viên</button>
 
         <button class="logout" onclick="logout()">Đăng Xuất</button>
     </div>
@@ -104,6 +116,13 @@
                 <tbody id="student-list"></tbody>
             </table>
         </div>
+
+        <div class="settings-section">
+            <h3>Đổi Mã Đăng Nhập (Cá Nhân)</h3>
+            <input type="text" id="new-gv-code" placeholder="Nhập mã đăng nhập mới...">
+            <button class="action" style="margin-top: 10px;" onclick="changeLoginCode('teachers', 'new-gv-code')">Cập Nhật Mã Mới</button>
+        </div>
+
         <button class="logout" onclick="logout()">Đăng Xuất</button>
     </div>
 
@@ -127,10 +146,10 @@
             <tbody id="parent-attendance-list"></tbody>
         </table>
 
-        <div style="margin-top: 30px; border-top: 1px solid #ccc; padding-top: 15px;">
-            <h3>Đổi Mật Khẩu (Mã CMHS)</h3>
-            <input type="password" id="new-cmhs-pass" placeholder="Mật khẩu mới">
-            <button class="action" style="margin-top: 10px;" onclick="changeParentPassword()">Cập Nhật Mật Khẩu</button>
+        <div class="settings-section">
+            <h3>Đổi Mã Đăng Nhập (Cá Nhân)</h3>
+            <input type="text" id="new-cmhs-code" placeholder="Nhập mã đăng nhập mới...">
+            <button class="action" style="margin-top: 10px;" onclick="changeLoginCode('parents', 'new-cmhs-code')">Cập Nhật Mã Mới</button>
         </div>
 
         <button class="logout" onclick="logout()">Đăng Xuất</button>
@@ -151,7 +170,6 @@
         appId: "1:557913057858:web:509cf8f62cfdd325155bdb"
     };
 
-    // Khởi tạo Firebase
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
 
@@ -163,26 +181,17 @@
     let unsubscribeSnapshot = null;
 
     // ==========================================
-    // 2. LOGIC GIAO DIỆN & ĐĂNG NHẬP
+    // 2. LOGIC ĐĂNG NHẬP 
     // ==========================================
     function switchLogin(role) {
         currentRole = role;
         document.querySelectorAll('.nav-tabs button').forEach(btn => btn.classList.remove('active-tab'));
         event.target.classList.add('active-tab');
         
-        if(role === 'admin') {
-            document.getElementById('lbl-username').style.display = 'none';
-            document.getElementById('username').style.display = 'none';
-            document.getElementById('group-password').style.display = 'block';
-        } else if (role === 'parent') {
-            document.getElementById('lbl-username').innerText = 'Mã CMHS';
-            document.getElementById('username').style.display = 'block';
-            document.getElementById('group-password').style.display = 'block';
-        } else {
-            document.getElementById('lbl-username').innerText = 'Mã Đăng Nhập (GV)';
-            document.getElementById('username').style.display = 'block';
-            document.getElementById('group-password').style.display = 'block';
-        }
+        const lbl = document.getElementById('lbl-username');
+        if(role === 'admin') lbl.innerText = 'Mã Quản Trị Viên';
+        else if (role === 'parent') lbl.innerText = 'Mã Đăng Nhập (Phụ Huynh)';
+        else lbl.innerText = 'Mã Đăng Nhập (Giáo Viên)';
     }
 
     function showScreen(screenId) {
@@ -191,36 +200,34 @@
     }
 
     async function handleLogin() {
-        const username = document.getElementById('username').value.trim();
-        const password = document.getElementById('password').value.trim();
+        const loginCode = document.getElementById('username').value.trim();
+        if(!loginCode) { alert("Vui lòng nhập mã đăng nhập!"); return; }
 
         if(currentRole === 'admin') {
-            if(password === '11043006') {
+            if(loginCode === '11043006') {
                 showScreen('admin-screen');
             } else {
                 alert("Mã quản trị không đúng!");
             }
         } 
         else if (currentRole === 'teacher') {
-            const docRef = db.collection("teachers").doc(username);
-            const docSnap = await docRef.get();
-            if (docSnap.exists && docSnap.data().password === password) {
-                currentUser = { id: username, ...docSnap.data() };
+            const snapshot = await db.collection("teachers").where("loginCode", "==", loginCode).get();
+            if (!snapshot.empty) {
+                currentUser = snapshot.docs[0].data();
                 setupTeacherDashboard();
                 showScreen('teacher-screen');
             } else {
-                alert("Sai Mã GV hoặc Mật khẩu!");
+                alert("Mã đăng nhập không tồn tại!");
             }
         }
         else if (currentRole === 'parent') {
-            const docRef = db.collection("parents").doc(username);
-            const docSnap = await docRef.get();
-            if (docSnap.exists && docSnap.data().password === password) {
-                currentUser = { id: username, ...docSnap.data() };
+            const snapshot = await db.collection("parents").where("loginCode", "==", loginCode).get();
+            if (!snapshot.empty) {
+                currentUser = snapshot.docs[0].data();
                 setupParentDashboard();
                 showScreen('parent-screen');
             } else {
-                alert("Sai Mã CMHS hoặc Mật khẩu!");
+                alert("Mã đăng nhập không tồn tại!");
             }
         }
     }
@@ -233,52 +240,116 @@
         if(unsubscribeSnapshot) unsubscribeSnapshot();
         currentUser = null;
         document.getElementById('username').value = '';
-        document.getElementById('password').value = '';
         showScreen('login-screen');
     }
 
-    // ==========================================
-    // 3. CHỨC NĂNG ADMIN
-    // ==========================================
-    async function importStudents() {
-        const data = document.getElementById('data-students').value.trim();
-        const lines = data.split('\n');
-        const batch = db.batch();
-        
-        lines.forEach(line => {
-            // Đã cập nhật lại thứ tự map cho đúng yêu cầu
-            const [maHS, lop, ten, maCMHS] = line.split(',').map(s => s.trim());
-            if(maHS && lop && maCMHS) {
-                // Lưu HS
-                const hsRef = db.collection('students').doc(maHS);
-                batch.set(hsRef, { id: maHS, class: lop, parentId: maCMHS, name: ten || '' });
-                // Tạo tài khoản Parent mặc định (Mật khẩu bằng Mã CMHS)
-                const parentRef = db.collection('parents').doc(maCMHS);
-                batch.set(parentRef, { id: maCMHS, password: maCMHS, studentId: maHS }, {merge: true});
-            }
-        });
-        
-        await batch.commit();
-        alert("Nạp danh sách học sinh thành công!");
+    async function changeLoginCode(collectionName, inputId) {
+        const newCode = document.getElementById(inputId).value.trim();
+        if(newCode.length < 4) {
+            alert("Mã đăng nhập mới phải từ 4 ký tự trở lên!"); 
+            return;
+        }
+        const checkSnap = await db.collection(collectionName).where("loginCode", "==", newCode).get();
+        if(!checkSnap.empty) {
+            alert("Mã này đã có người sử dụng. Vui lòng chọn mã khác!");
+            return;
+        }
+        await db.collection(collectionName).doc(currentUser.id).update({ loginCode: newCode });
+        currentUser.loginCode = newCode;
+        alert("Đổi mã đăng nhập thành công! Từ lần sau hãy dùng mã này để vào hệ thống.");
+        document.getElementById(inputId).value = '';
     }
 
-    async function importTeachers() {
-        const data = document.getElementById('data-teachers').value.trim();
-        const lines = data.split('\n');
-        const batch = db.batch();
-        
-        lines.forEach(line => {
-            const [maGV, pass, monStr, lopStr] = line.split(',').map(s => s.trim());
-            if(maGV && pass) {
-                const mon = monStr.split('-').map(s=>s.trim());
-                const lop = lopStr.split('-').map(s=>s.trim());
-                const gvRef = db.collection('teachers').doc(maGV);
-                batch.set(gvRef, { id: maGV, password: pass, subjects: mon, classes: lop });
-            }
+    // ==========================================
+    // 3. CHỨC NĂNG ADMIN NẠP FILE & TẢI FILE MẪU
+    // ==========================================
+
+    // Tính năng Tải File Mẫu
+    function downloadStudentSample() {
+        const data = [
+            ["Mã HS", "Lớp", "Họ Tên", "Mã CMHS"],
+            ["25001", "10A1", "Nguyễn Văn A", "PH25001"],
+            ["25002", "10A1", "Trần Thị B", "PH25002"]
+        ];
+        const ws = XLSX.utils.aoa_to_sheet(data);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "DanhSachHocSinh");
+        XLSX.writeFile(wb, "Mau_DanhSachHocSinh_THPTTranPhu.xlsx");
+    }
+
+    function downloadTeacherSample() {
+        const data = [
+            ["Mã GV", "Môn dạy", "Lớp dạy"],
+            ["GVToan01", "Toán, Tin Học", "10A1, 10A2, 11A1"],
+            ["GVLy02", "Vật Lý", "10A1, 11A1"]
+        ];
+        const ws = XLSX.utils.aoa_to_sheet(data);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "DanhSachGiaoVien");
+        XLSX.writeFile(wb, "Mau_DanhSachGiaoVien_THPTTranPhu.xlsx");
+    }
+
+    // Tính năng Đọc file Excel tải lên
+    function parseExcel(file, callback) {
+        if(!file) { alert("Vui lòng chọn file Excel!"); return; }
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, {type: 'array'});
+            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+            const rows = XLSX.utils.sheet_to_json(firstSheet, {header: 1});
+            callback(rows.slice(1)); 
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+    async function importStudentsFromExcel() {
+        const file = document.getElementById('excel-students').files[0];
+        parseExcel(file, async (rows) => {
+            const batch = db.batch();
+            let count = 0;
+            rows.forEach(row => {
+                const maHS = row[0] ? String(row[0]).trim() : '';
+                const lop = row[1] ? String(row[1]).trim() : '';
+                const ten = row[2] ? String(row[2]).trim() : '';
+                const maCMHS = row[3] ? String(row[3]).trim() : '';
+
+                if(maHS && lop && maCMHS) {
+                    const hsRef = db.collection('students').doc(maHS);
+                    batch.set(hsRef, { id: maHS, class: lop, name: ten, parentId: maCMHS });
+                    
+                    const parentRef = db.collection('parents').doc(maCMHS);
+                    batch.set(parentRef, { id: maCMHS, loginCode: maCMHS, studentId: maHS }, {merge: true});
+                    count++;
+                }
+            });
+            await batch.commit();
+            alert(`Đã nạp thành công ${count} học sinh!`);
         });
-        
-        await batch.commit();
-        alert("Nạp danh sách giáo viên thành công!");
+    }
+
+    async function importTeachersFromExcel() {
+        const file = document.getElementById('excel-teachers').files[0];
+        parseExcel(file, async (rows) => {
+            const batch = db.batch();
+            let count = 0;
+            rows.forEach(row => {
+                const maGV = row[0] ? String(row[0]).trim() : '';
+                const monStr = row[1] ? String(row[1]).trim() : '';
+                const lopStr = row[2] ? String(row[2]).trim() : '';
+
+                if(maGV) {
+                    const mon = monStr.split(',').map(s=>s.trim()).filter(s=>s);
+                    const lop = lopStr.split(',').map(s=>s.trim()).filter(s=>s);
+                    
+                    const gvRef = db.collection('teachers').doc(maGV);
+                    batch.set(gvRef, { id: maGV, loginCode: maGV, subjects: mon, classes: lop });
+                    count++;
+                }
+            });
+            await batch.commit();
+            alert(`Đã nạp thành công ${count} giáo viên!`);
+        });
     }
 
     // ==========================================
@@ -289,8 +360,8 @@
         const subjectSelect = document.getElementById('teacher-subject');
         classSelect.innerHTML = ''; subjectSelect.innerHTML = '';
         
-        currentUser.classes.forEach(c => classSelect.add(new Option(c, c)));
-        currentUser.subjects.forEach(s => subjectSelect.add(new Option(s, s)));
+        if(currentUser.classes) currentUser.classes.forEach(c => classSelect.add(new Option(c, c)));
+        if(currentUser.subjects) currentUser.subjects.forEach(s => subjectSelect.add(new Option(s, s)));
         document.getElementById('attendance-section').style.display = 'none';
     }
 
@@ -298,31 +369,24 @@
         document.getElementById('attendance-section').style.display = 'block';
         const selectedClass = document.getElementById('teacher-class').value;
         const selectedSubject = document.getElementById('teacher-subject').value;
-        const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+        const today = new Date().toISOString().split('T')[0];
         
         currentAttendanceDocId = `${today}_${selectedClass}_${selectedSubject}`;
         
-        // 1. Lấy danh sách HS của lớp này
         const studentsRef = db.collection('students').where('class', '==', selectedClass);
         const snapshot = await studentsRef.get();
         let studentsList = [];
         snapshot.forEach(doc => studentsList.push(doc.data()));
-        
-        // Sắp xếp theo Mã HS
         studentsList.sort((a, b) => a.id.localeCompare(b.id));
 
-        // 2. Thiết lập lắng nghe Realtime trên file điểm danh hôm nay
         const attRef = db.collection('attendance').doc(currentAttendanceDocId);
-        
-        // Nếu chưa có file điểm danh hôm nay cho lớp/môn này -> Tạo mới (tất cả Vắng)
         const attDoc = await attRef.get();
         if(!attDoc.exists) {
             let initialData = { class: selectedClass, subject: selectedSubject, date: today, records: {} };
-            studentsList.forEach(hs => initialData.records[hs.id] = false); // false = Vắng
+            studentsList.forEach(hs => initialData.records[hs.id] = false);
             await attRef.set(initialData);
         }
 
-        // Lắng nghe thay đổi
         if(unsubscribeSnapshot) unsubscribeSnapshot();
         unsubscribeSnapshot = attRef.onSnapshot(doc => {
             const data = doc.data().records;
@@ -349,12 +413,9 @@
         });
     }
 
-    // Thủ công đổi trạng thái
     async function manualUpdateStatus(studentId, isPresent) {
         const attRef = db.collection('attendance').doc(currentAttendanceDocId);
-        await attRef.update({
-            [`records.${studentId}`]: isPresent
-        });
+        await attRef.update({ [`records.${studentId}`]: isPresent });
     }
 
     // ==========================================
@@ -376,12 +437,9 @@
     }
 
     function onScanSuccess(decodedText, decodedResult) {
-        // decodedText chính là Mã HS
-        // Tạm ngưng máy quét 2s để tránh quét lặp liên tục
         html5QrcodeScanner.pause(true);
         setTimeout(() => html5QrcodeScanner.resume(), 2000);
 
-        // Cập nhật lên Firebase
         const attRef = db.collection('attendance').doc(currentAttendanceDocId);
         attRef.update({
             [`records.${decodedText.trim()}`]: true
@@ -393,13 +451,12 @@
     }
 
     // ==========================================
-    // 6. CHỨC NĂNG PHỤ HUYNH (CMHS)
+    // 6. CHỨC NĂNG PHỤ HUYNH
     // ==========================================
     async function setupParentDashboard() {
         const today = new Date().toISOString().split('T')[0];
         document.getElementById('today-date').innerText = new Date().toLocaleDateString('vi-VN');
 
-        // Lấy thông tin HS
         const hsRef = db.collection('students').doc(currentUser.studentId);
         const hsDoc = await hsRef.get();
         const hsData = hsDoc.data();
@@ -407,7 +464,6 @@
         document.getElementById('p-student-name').innerText = hsData.name;
         document.getElementById('p-student-class').innerText = hsData.class;
 
-        // Truy vấn các môn học trong ngày của Lớp này
         const attRef = db.collection('attendance').where('date', '==', today).where('class', '==', hsData.class);
         const snapshot = await attRef.get();
         
@@ -431,16 +487,6 @@
             `;
             tbody.appendChild(tr);
         });
-    }
-
-    async function changeParentPassword() {
-        const newPass = document.getElementById('new-cmhs-pass').value.trim();
-        if(newPass.length < 4) {
-            alert("Mật khẩu mới phải từ 4 ký tự trở lên!"); return;
-        }
-        await db.collection('parents').doc(currentUser.id).update({ password: newPass });
-        alert("Cập nhật mật khẩu thành công!");
-        document.getElementById('new-cmhs-pass').value = '';
     }
 </script>
 
