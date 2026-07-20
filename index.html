@@ -1,3 +1,4 @@
+<!DOCTYPE html>
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
@@ -139,13 +140,21 @@
     let lastScannedText = ""; // Biến chống quét lặp lại liên tục 1 mã
     let scanTimeout;
 
-    // Hàm tạo âm thanh Beep khi quét thành công
+    // Hàm tạo âm thanh Beep khi quét thành công (Đã được làm cho kêu to hơn)
     function playBeep() {
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        // Thêm bộ khuếch đại âm thanh
+        const gainNode = audioCtx.createGain();
+        gainNode.gain.setValueAtTime(2.0, audioCtx.currentTime); // Tăng gấp đôi âm lượng gốc
+        gainNode.connect(audioCtx.destination);
+
         const oscillator = audioCtx.createOscillator();
-        oscillator.type = 'sine';
-        oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); // Âm cao
-        oscillator.connect(audioCtx.destination);
+        // Đổi sang sóng vuông (square) - nghe to, gắt và giống tiếng máy quét siêu thị hơn
+        oscillator.type = 'square'; 
+        oscillator.frequency.setValueAtTime(900, audioCtx.currentTime); 
+        
+        oscillator.connect(gainNode);
         oscillator.start();
         setTimeout(() => oscillator.stop(), 150);
     }
@@ -271,6 +280,5 @@
     // Chạy render bảng lần đầu khi mở app
     renderTable();
 </script>
-
 </body>
 </html>
