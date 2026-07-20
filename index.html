@@ -1,3 +1,4 @@
+<!DOCTYPE html>
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
@@ -48,6 +49,7 @@
             margin-bottom: 15px; font-size: 1.1em; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         }
         .time-badge { background: #dcfce7; color: #166534; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; margin-right: 4px; display: inline-block; margin-bottom: 2px; }
+        .auto-shift { background: #e5e7eb; border: 1px solid #ccc; padding: 10px; border-radius: 4px; font-weight: bold; color: var(--primary); text-align: center; }
     </style>
 </head>
 <body>
@@ -112,6 +114,24 @@
             <label>Chọn Môn:</label>
             <select id="teacher-subject"></select>
         </div>
+        
+        <div class="flex-row" style="margin-bottom: 15px;">
+            <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                <label>Ca học (Tự động):</label>
+                <div id="teacher-shift" class="auto-shift">Đang lấy giờ...</div>
+            </div>
+            <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                <label>Chọn Tiết:</label>
+                <select id="teacher-period">
+                    <option value="1">Tiết 1</option>
+                    <option value="2">Tiết 2</option>
+                    <option value="3">Tiết 3</option>
+                    <option value="4">Tiết 4</option>
+                    <option value="5">Tiết 5</option>
+                </select>
+            </div>
+        </div>
+
         <button onclick="loadAttendanceList()">Mở Danh Sách Điểm Danh</button>
         
         <div id="attendance-section" style="display: none; margin-top: 20px;">
@@ -133,7 +153,6 @@
             </table>
         </div>
 
-        <!-- Các nút chức năng gộp chung xuống dưới -->
         <div class="flex-bottom">
             <button class="action secondary" onclick="promptChangeLoginCode('teachers')">🔑 Đổi Mã Đăng Nhập</button>
             <button class="logout" onclick="logout()">Đăng Xuất</button>
@@ -153,14 +172,13 @@
         <table>
             <thead>
                 <tr>
-                    <th>Môn học</th>
+                    <th>Môn học (Tiết/Ca)</th>
                     <th>Chi tiết điểm danh</th>
                 </tr>
             </thead>
             <tbody id="parent-attendance-list"></tbody>
         </table>
 
-        <!-- Các nút chức năng gộp chung xuống dưới -->
         <div class="flex-bottom">
             <button class="action secondary" onclick="promptChangeLoginCode('parents')">🔑 Đổi Mã Đăng Nhập</button>
             <button class="logout" onclick="logout()">Đăng Xuất</button>
@@ -192,6 +210,7 @@
     let unsubscribeSnapshot = null;
     let recentScans = {}; 
     let toastTimeout = null;
+    let autoDetectedShift = "Sáng";
 
     // ==========================================
     // ÂM THANH & THÔNG BÁO
@@ -219,7 +238,7 @@
     }
 
     // ==========================================
-    // 2. LOGIC ĐĂNG NHẬP & ĐỔI MÃ GỌN
+    // 2. LOGIC ĐĂNG NHẬP 
     // ==========================================
     function switchLogin(role) {
         currentRole = role;
@@ -278,23 +297,16 @@
         showScreen('login-screen');
     }
 
-    // Giao diện đổi mã mới gọn gàng (dùng Prompt)
     async function promptChangeLoginCode(collectionName) {
         const newCode = prompt("Vui lòng nhập mã đăng nhập mới (Từ 4 ký tự trở lên):");
-        if (newCode === null) return; // Người dùng bấm Hủy
+        if (newCode === null) return;
         
         const trimmedCode = newCode.trim();
-        if(trimmedCode.length < 4) { 
-            alert("Mã đăng nhập mới phải từ 4 ký tự trở lên!"); 
-            return; 
-        }
+        if(trimmedCode.length < 4) { alert("Mã đăng nhập mới phải từ 4 ký tự trở lên!"); return; }
         
         try {
             const checkSnap = await db.collection(collectionName).where("loginCode", "==", trimmedCode).get();
-            if(!checkSnap.empty) { 
-                alert("Mã này đã có người sử dụng. Vui lòng chọn mã khác!"); 
-                return; 
-            }
+            if(!checkSnap.empty) { alert("Mã này đã có người sử dụng. Vui lòng chọn mã khác!"); return; }
             await db.collection(collectionName).doc(currentUser.id).update({ loginCode: trimmedCode });
             currentUser.loginCode = trimmedCode;
             alert("✅ Đổi mã thành công! Từ lần sau hãy dùng mã này để vào hệ thống.");
@@ -388,8 +400,16 @@
     // ==========================================
     function setupTeacherDashboard() {
         document.getElementById('t-teacher-name').innerText = currentUser.name || currentUser.id;
-        const classSelect = document.getElementById('teacher-class'); const subjectSelect = document.getElementById('teacher-subject');
+        
+        // Tự động nhận diện Ca học theo giờ thiết bị
+        const currentHour = new Date().getHours();
+        autoDetectedShift = currentHour < 12 ? "Sáng" : "Chiều";
+        document.getElementById('teacher-shift').innerText = `Ca ${autoDetectedShift}`;
+
+        const classSelect = document.getElementById('teacher-class'); 
+        const subjectSelect = document.getElementById('teacher-subject');
         classSelect.innerHTML = ''; subjectSelect.innerHTML = '';
+        
         if(currentUser.classes) currentUser.classes.forEach(c => classSelect.add(new Option(c, c)));
         if(currentUser.subjects) currentUser.subjects.forEach(s => subjectSelect.add(new Option(s, s)));
         document.getElementById('attendance-section').style.display = 'none';
@@ -399,9 +419,11 @@
         document.getElementById('attendance-section').style.display = 'block';
         const selectedClass = document.getElementById('teacher-class').value;
         const selectedSubject = document.getElementById('teacher-subject').value;
+        const selectedPeriod = document.getElementById('teacher-period').value; 
         const today = new Date().toISOString().split('T')[0];
         
-        currentAttendanceDocId = `${today}_${selectedClass}_${selectedSubject}`;
+        // Document ID chốt kèm Cả Ca học và Tiết học
+        currentAttendanceDocId = `${today}_${selectedClass}_${selectedSubject}_${autoDetectedShift}_T${selectedPeriod}`;
         
         const studentsRef = db.collection('students').where('class', '==', selectedClass);
         const snapshot = await studentsRef.get();
@@ -412,7 +434,7 @@
         const attRef = db.collection('attendance').doc(currentAttendanceDocId);
         const attDoc = await attRef.get();
         if(!attDoc.exists) {
-            let initialData = { class: selectedClass, subject: selectedSubject, date: today, records: {} };
+            let initialData = { class: selectedClass, subject: selectedSubject, period: selectedPeriod, shift: autoDetectedShift, date: today, records: {} };
             studentsList.forEach(hs => initialData.records[hs.id] = []);
             await attRef.set(initialData);
         }
@@ -504,7 +526,6 @@
         if(doc.exists) {
             let allRecords = doc.data().records || {};
             let studentRecords = allRecords[studentId] || [];
-            
             if(typeof studentRecords === 'boolean') studentRecords = studentRecords ? [{time: 'N/A', ts: 0}] : [];
             
             if (studentRecords.length > 0) {
@@ -548,8 +569,19 @@
             return;
         }
 
+        let attendanceList = [];
         snapshot.forEach(doc => {
-            const data = doc.data();
+            attendanceList.push(doc.data());
+        });
+        
+        // Sắp xếp theo Tiết học
+        attendanceList.sort((a, b) => {
+            const periodA = parseInt(a.period) || 0;
+            const periodB = parseInt(b.period) || 0;
+            return periodA - periodB;
+        });
+
+        attendanceList.forEach(data => {
             let studentRecords = data.records[currentUser.studentId] || [];
             if(typeof studentRecords === 'boolean') studentRecords = studentRecords ? [{time: 'N/A', ts: 0}] : [];
             
@@ -561,8 +593,11 @@
                 statusHtml = `<div class="status-absent">Vắng</div>`;
             }
 
+            // Gắn thông tin Tiết và Ca học tự động vào bảng theo dõi
+            const periodText = data.period ? ` (Tiết ${data.period} - Ca ${data.shift || 'Sáng'})` : '';
+            
             const tr = document.createElement('tr');
-            tr.innerHTML = `<td>${data.subject}</td><td>${statusHtml}</td>`;
+            tr.innerHTML = `<td><strong>${data.subject}</strong>${periodText}</td><td>${statusHtml}</td>`;
             tbody.appendChild(tr);
         });
     }
