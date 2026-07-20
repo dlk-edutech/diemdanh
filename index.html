@@ -21,8 +21,9 @@
         .form-group { margin-bottom: 15px; }
         label { display: block; font-weight: bold; margin-bottom: 5px; }
         input, select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-        button { width: 100%; padding: 10px; background: var(--primary); color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        button { width: 100%; padding: 10px; background: var(--primary); color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; margin-top: 10px; transition: opacity 0.2s; }
         button:hover { opacity: 0.9; }
+        button:disabled { background: #9ca3af; cursor: not-allowed; }
         button.logout { background: #dc2626; margin-top: 20px; }
         button.action { width: auto; padding: 5px 15px; background: #10b981; }
         button.secondary { background: #6b7280; margin-top: 0; height: 100%; }
@@ -73,7 +74,7 @@
             <input type="file" id="excel-students" accept=".xlsx, .xls" style="flex: 1;">
             <button class="action secondary" onclick="downloadStudentSample()">📥 Tải File Mẫu</button>
         </div>
-        <button class="action" onclick="importStudentsFromExcel()">Nạp Danh Sách Học Sinh</button>
+        <button class="action" onclick="importStudentsFromExcel(this)">Nạp Danh Sách Học Sinh</button>
 
         <h3 style="margin-top: 30px;">2. Nạp danh sách Giáo Viên</h3>
         <div class="excel-guide">
@@ -83,7 +84,7 @@
             <input type="file" id="excel-teachers" accept=".xlsx, .xls" style="flex: 1;">
             <button class="action secondary" onclick="downloadTeacherSample()">📥 Tải File Mẫu</button>
         </div>
-        <button class="action" onclick="importTeachersFromExcel()">Nạp Danh Sách Giáo Viên</button>
+        <button class="action" onclick="importTeachersFromExcel(this)">Nạp Danh Sách Giáo Viên</button>
 
         <button class="logout" onclick="logout()">Đăng Xuất</button>
     </div>
@@ -303,54 +304,115 @@
         reader.readAsArrayBuffer(file);
     }
 
-    async function importStudentsFromExcel() {
+    async function importStudentsFromExcel(btnElement) {
         const file = document.getElementById('excel-students').files[0];
-        parseExcel(file, async (rows) => {
-            const batch = db.batch();
-            let count = 0;
-            rows.forEach(row => {
-                const maHS = row[0] ? String(row[0]).trim() : '';
-                const lop = row[1] ? String(row[1]).trim() : '';
-                const ten = row[2] ? String(row[2]).trim() : '';
-                const maCMHS = row[3] ? String(row[3]).trim() : '';
+        if(!file) { alert("Vui lòng chọn file Excel!"); return; }
 
-                if(maHS && lop && maCMHS) {
-                    const hsRef = db.collection('students').doc(maHS);
-                    batch.set(hsRef, { id: maHS, class: lop, name: ten, parentId: maCMHS });
-                    
-                    const parentRef = db.collection('parents').doc(maCMHS);
-                    batch.set(parentRef, { id: maCMHS, loginCode: maCMHS, studentId: maHS }, {merge: true});
-                    count++;
+        const originalText = btnElement.innerText;
+        btnElement.innerText = "⏳ Đang nạp dữ liệu...";
+        btnElement.disabled = true;
+
+        parseExcel(file, async (rows) => {
+            try {
+                let count = 0;
+                let opCount = 0;
+                let batches = [];
+                let currentBatch = db.batch();
+
+                rows.forEach(row => {
+                    const maHS = row[0] ? String(row[0]).trim() : '';
+                    const lop = row[1] ? String(row[1]).trim() : '';
+                    const ten = row[2] ? String(row[2]).trim() : '';
+                    const maCMHS = row[3] ? String(row[3]).trim() : '';
+
+                    if(maHS && lop && maCMHS) {
+                        const hsRef = db.collection('students').doc(maHS);
+                        currentBatch.set(hsRef, { id: maHS, class: lop, name: ten, parentId: maCMHS });
+                        opCount++;
+                        
+                        const parentRef = db.collection('parents').doc(maCMHS);
+                        currentBatch.set(parentRef, { id: maCMHS, loginCode: maCMHS, studentId: maHS }, {merge: true});
+                        opCount++;
+
+                        count++;
+
+                        // Tự động ngắt mẻ dữ liệu khi đạt 400 lệnh (Giới hạn của Firebase là 500)
+                        if (opCount >= 400) {
+                            batches.push(currentBatch.commit());
+                            currentBatch = db.batch();
+                            opCount = 0;
+                        }
+                    }
+                });
+
+                // Đẩy mẻ dữ liệu cuối cùng (nếu còn dư)
+                if (opCount > 0) {
+                    batches.push(currentBatch.commit());
                 }
-            });
-            await batch.commit();
-            alert(`Đã nạp thành công ${count} học sinh!`);
+
+                await Promise.all(batches); // Chờ tất cả đẩy xong
+                alert(`✅ Đã nạp thành công ${count} học sinh!`);
+            } catch (error) {
+                console.error(error);
+                alert("❌ Có lỗi xảy ra. Kiểm tra lại Quyền truy cập (Rules) của Firestore Database.\nChi tiết lỗi: " + error.message);
+            } finally {
+                btnElement.innerText = originalText;
+                btnElement.disabled = false;
+            }
         });
     }
 
-    async function importTeachersFromExcel() {
+    async function importTeachersFromExcel(btnElement) {
         const file = document.getElementById('excel-teachers').files[0];
-        parseExcel(file, async (rows) => {
-            const batch = db.batch();
-            let count = 0;
-            rows.forEach(row => {
-                const maGV = row[0] ? String(row[0]).trim() : '';
-                const tenGV = row[1] ? String(row[1]).trim() : '';
-                const monStr = row[2] ? String(row[2]).trim() : '';
-                const lopStr = row[3] ? String(row[3]).trim() : '';
+        if(!file) { alert("Vui lòng chọn file Excel!"); return; }
 
-                if(maGV) {
-                    const mon = monStr.split(',').map(s=>s.trim()).filter(s=>s);
-                    const lop = lopStr.split(',').map(s=>s.trim()).filter(s=>s);
-                    
-                    const gvRef = db.collection('teachers').doc(maGV);
-                    // Bổ sung thuộc tính name (Họ và tên)
-                    batch.set(gvRef, { id: maGV, loginCode: maGV, name: tenGV, subjects: mon, classes: lop });
-                    count++;
+        const originalText = btnElement.innerText;
+        btnElement.innerText = "⏳ Đang nạp dữ liệu...";
+        btnElement.disabled = true;
+
+        parseExcel(file, async (rows) => {
+            try {
+                let count = 0;
+                let opCount = 0;
+                let batches = [];
+                let currentBatch = db.batch();
+
+                rows.forEach(row => {
+                    const maGV = row[0] ? String(row[0]).trim() : '';
+                    const tenGV = row[1] ? String(row[1]).trim() : '';
+                    const monStr = row[2] ? String(row[2]).trim() : '';
+                    const lopStr = row[3] ? String(row[3]).trim() : '';
+
+                    if(maGV) {
+                        const mon = monStr.split(',').map(s=>s.trim()).filter(s=>s);
+                        const lop = lopStr.split(',').map(s=>s.trim()).filter(s=>s);
+                        
+                        const gvRef = db.collection('teachers').doc(maGV);
+                        currentBatch.set(gvRef, { id: maGV, loginCode: maGV, name: tenGV, subjects: mon, classes: lop });
+                        opCount++;
+                        count++;
+
+                        if (opCount >= 400) {
+                            batches.push(currentBatch.commit());
+                            currentBatch = db.batch();
+                            opCount = 0;
+                        }
+                    }
+                });
+
+                if (opCount > 0) {
+                    batches.push(currentBatch.commit());
                 }
-            });
-            await batch.commit();
-            alert(`Đã nạp thành công ${count} giáo viên!`);
+
+                await Promise.all(batches);
+                alert(`✅ Đã nạp thành công ${count} giáo viên!`);
+            } catch (error) {
+                console.error(error);
+                alert("❌ Có lỗi xảy ra. Kiểm tra lại Quyền truy cập (Rules) của Firestore Database.\nChi tiết lỗi: " + error.message);
+            } finally {
+                btnElement.innerText = originalText;
+                btnElement.disabled = false;
+            }
         });
     }
 
@@ -358,7 +420,6 @@
     // 4. CHỨC NĂNG GIÁO VIÊN
     // ==========================================
     function setupTeacherDashboard() {
-        // Cập nhật lời chào hiển thị Họ và tên GV
         document.getElementById('t-teacher-name').innerText = currentUser.name || currentUser.id;
 
         const classSelect = document.getElementById('teacher-class');
