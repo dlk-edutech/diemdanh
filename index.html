@@ -40,6 +40,13 @@
         .settings-section { margin-top: 30px; border-top: 1px solid #ccc; padding-top: 15px; background: #f9fafb; padding: 15px; border-radius: 8px;}
         .flex-row { display: flex; gap: 10px; align-items: center; }
         .welcome-text { text-align: center; font-style: italic; color: #4b5563; margin-top: -10px; margin-bottom: 20px; }
+        
+        #scan-toast {
+            display: none; background: #10b981; color: white; padding: 12px; 
+            border-radius: 6px; text-align: center; font-weight: bold; 
+            margin-bottom: 15px; font-size: 1.1em; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .time-badge { background: #dcfce7; color: #166534; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; margin-right: 4px; display: inline-block; margin-bottom: 2px; }
     </style>
 </head>
 <body>
@@ -105,7 +112,9 @@
         <button onclick="loadAttendanceList()">Mở Danh Sách Điểm Danh</button>
         
         <div id="attendance-section" style="display: none; margin-top: 20px;">
-            <button class="action" style="background: #10b981; margin-bottom:15px" onclick="toggleScanner()">📷 Mở/Tắt Quét QR</button>
+            <button class="action" style="background: #10b981; margin-bottom:15px; width: 100%;" onclick="toggleScanner()">📷 Bật / Tắt Máy Quét QR</button>
+            
+            <div id="scan-toast">✅ Đã điểm danh thành công</div>
             <div id="qr-reader"></div>
 
             <table>
@@ -113,7 +122,7 @@
                     <tr>
                         <th>Mã HS</th>
                         <th>Họ Tên</th>
-                        <th>Trạng thái</th>
+                        <th>Trạng thái & Thời gian</th>
                         <th>Thao tác</th>
                     </tr>
                 </thead>
@@ -144,7 +153,7 @@
             <thead>
                 <tr>
                     <th>Môn học</th>
-                    <th>Trạng thái</th>
+                    <th>Chi tiết điểm danh</th>
                 </tr>
             </thead>
             <tbody id="parent-attendance-list"></tbody>
@@ -182,6 +191,33 @@
     let html5QrcodeScanner = null;
     let currentAttendanceDocId = null;
     let unsubscribeSnapshot = null;
+    let recentScans = {}; 
+    let toastTimeout = null;
+
+    // ==========================================
+    // ÂM THANH & THÔNG BÁO
+    // ==========================================
+    function playBeep() {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const gainNode = audioCtx.createGain();
+        gainNode.gain.setValueAtTime(2.0, audioCtx.currentTime); 
+        gainNode.connect(audioCtx.destination);
+        const oscillator = audioCtx.createOscillator();
+        oscillator.type = 'square'; 
+        oscillator.frequency.setValueAtTime(900, audioCtx.currentTime); 
+        oscillator.connect(gainNode);
+        oscillator.start();
+        setTimeout(() => oscillator.stop(), 100); 
+    }
+
+    function showToast(message, isWarning = false) {
+        const toast = document.getElementById('scan-toast');
+        toast.innerText = message;
+        toast.style.background = isWarning ? '#f59e0b' : '#10b981';
+        toast.style.display = 'block';
+        if(toastTimeout) clearTimeout(toastTimeout);
+        toastTimeout = setTimeout(() => { toast.style.display = 'none'; }, 3000);
+    }
 
     // ==========================================
     // 2. LOGIC ĐĂNG NHẬP 
@@ -207,11 +243,8 @@
         if(!loginCode) { alert("Vui lòng nhập mã đăng nhập!"); return; }
 
         if(currentRole === 'admin') {
-            if(loginCode === '11043006') {
-                showScreen('admin-screen');
-            } else {
-                alert("Mã quản trị không đúng!");
-            }
+            if(loginCode === '11043006') showScreen('admin-screen');
+            else alert("Mã quản trị không đúng!");
         } 
         else if (currentRole === 'teacher') {
             try {
@@ -220,12 +253,8 @@
                     currentUser = snapshot.docs[0].data();
                     setupTeacherDashboard();
                     showScreen('teacher-screen');
-                } else {
-                    alert("Mã GV không tồn tại!");
-                }
-            } catch (err) {
-                alert("Lỗi kết nối máy chủ: Vui lòng kiểm tra đã bật Firestore Database chưa!");
-            }
+                } else alert("Mã GV không tồn tại!");
+            } catch (err) { alert("Lỗi kết nối máy chủ Firestore."); }
         }
         else if (currentRole === 'parent') {
             try {
@@ -234,12 +263,8 @@
                     currentUser = snapshot.docs[0].data();
                     setupParentDashboard();
                     showScreen('parent-screen');
-                } else {
-                    alert("Mã CMHS không tồn tại!");
-                }
-            } catch (err) {
-                alert("Lỗi kết nối máy chủ: Vui lòng kiểm tra đã bật Firestore Database chưa!");
-            }
+                } else alert("Mã CMHS không tồn tại!");
+            } catch (err) { alert("Lỗi kết nối máy chủ Firestore."); }
         }
     }
 
@@ -256,215 +281,92 @@
 
     async function changeLoginCode(collectionName, inputId) {
         const newCode = document.getElementById(inputId).value.trim();
-        if(newCode.length < 4) {
-            alert("Mã đăng nhập mới phải từ 4 ký tự trở lên!"); 
-            return;
-        }
+        if(newCode.length < 4) { alert("Mã đăng nhập mới phải từ 4 ký tự trở lên!"); return; }
         const checkSnap = await db.collection(collectionName).where("loginCode", "==", newCode).get();
-        if(!checkSnap.empty) {
-            alert("Mã này đã có người sử dụng. Vui lòng chọn mã khác!");
-            return;
-        }
+        if(!checkSnap.empty) { alert("Mã này đã có người sử dụng!"); return; }
         await db.collection(collectionName).doc(currentUser.id).update({ loginCode: newCode });
         currentUser.loginCode = newCode;
-        alert("Đổi mã thành công! Từ lần sau hãy dùng mã này để vào hệ thống.");
-        document.getElementById(inputId).value = '';
+        alert("Đổi mã thành công!"); document.getElementById(inputId).value = '';
     }
 
     // ==========================================
-    // 3. CHỨC NĂNG ADMIN NẠP FILE (CÓ CHỐNG TREO)
+    // 3. CHỨC NĂNG ADMIN NẠP FILE
     // ==========================================
     function downloadStudentSample() {
-        const data = [
-            ["Mã HS", "Lớp", "Họ Tên", "Mã CMHS"],
-            ["25001", "10A1", "Nguyễn Văn A", "PH25001"],
-            ["25002", "10A1", "Trần Thị B", "PH25002"]
-        ];
+        const data = [ ["Mã HS", "Lớp", "Họ Tên", "Mã CMHS"], ["25001", "10A1", "Nguyễn Văn A", "PH25001"] ];
         const ws = XLSX.utils.aoa_to_sheet(data);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "DanhSachHocSinh");
-        XLSX.writeFile(wb, "Mau_DanhSachHocSinh.xlsx");
+        const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "DS"); XLSX.writeFile(wb, "Mau_HocSinh.xlsx");
     }
 
     function downloadTeacherSample() {
-        const data = [
-            ["Mã GV", "Họ và tên", "Môn dạy", "Lớp dạy"],
-            ["GVToan01", "Nguyễn Văn Toán", "Toán, Tin Học", "10A1, 10A2, 11A1"],
-            ["GVLy02", "Trần Thị Lý", "Vật Lý", "10A1, 11A1"]
-        ];
+        const data = [ ["Mã GV", "Họ và tên", "Môn dạy", "Lớp dạy"], ["GV01", "Nguyễn Văn Toán", "Toán", "10A1"] ];
         const ws = XLSX.utils.aoa_to_sheet(data);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "DanhSachGiaoVien");
-        XLSX.writeFile(wb, "Mau_DanhSachGiaoVien.xlsx");
+        const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "DS"); XLSX.writeFile(wb, "Mau_GiaoVien.xlsx");
     }
 
-    // Hàm đọc Excel an toàn
     function parseExcel(file, onSuccess, onError) {
         if(!file) { alert("Vui lòng chọn file Excel!"); return; }
         const reader = new FileReader();
         reader.onload = function(e) {
             try {
-                if (typeof XLSX === 'undefined') {
-                    throw new Error("Không thể tải thư viện giải mã Excel. Vui lòng kiểm tra kết nối mạng!");
-                }
                 const data = new Uint8Array(e.target.result);
                 const workbook = XLSX.read(data, {type: 'array'});
-                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-                const rows = XLSX.utils.sheet_to_json(firstSheet, {header: 1});
-                onSuccess(rows.slice(1)); 
-            } catch (err) {
-                onError(err);
-            }
-        };
-        reader.onerror = function() {
-            onError(new Error("Lỗi trình duyệt khi cố gắng đọc file."));
+                onSuccess(XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], {header: 1}).slice(1)); 
+            } catch (err) { onError(err); }
         };
         reader.readAsArrayBuffer(file);
     }
 
     async function importStudentsFromExcel(btnElement) {
         const file = document.getElementById('excel-students').files[0];
-        if(!file) { alert("Vui lòng chọn file Excel!"); return; }
-
-        const originalText = btnElement.innerText;
-        btnElement.innerText = "⏳ Đang nạp dữ liệu...";
-        btnElement.disabled = true;
+        if(!file) return;
+        const oText = btnElement.innerText; btnElement.innerText = "⏳ Đang nạp..."; btnElement.disabled = true;
 
         parseExcel(file, async (rows) => {
             try {
-                let count = 0;
-                let opCount = 0;
-                let batches = [];
-                let currentBatch = db.batch();
-
+                let count = 0; let opCount = 0; let batches = []; let currentBatch = db.batch();
                 rows.forEach(row => {
-                    const maHS = row[0] ? String(row[0]).trim() : '';
-                    const lop = row[1] ? String(row[1]).trim() : '';
-                    const ten = row[2] ? String(row[2]).trim() : '';
-                    const maCMHS = row[3] ? String(row[3]).trim() : '';
-
+                    const maHS = row[0] ? String(row[0]).trim() : ''; const lop = row[1] ? String(row[1]).trim() : '';
+                    const ten = row[2] ? String(row[2]).trim() : ''; const maCMHS = row[3] ? String(row[3]).trim() : '';
                     if(maHS && lop && maCMHS) {
-                        const hsRef = db.collection('students').doc(maHS);
-                        currentBatch.set(hsRef, { id: maHS, class: lop, name: ten, parentId: maCMHS });
-                        opCount++;
-                        
-                        const parentRef = db.collection('parents').doc(maCMHS);
-                        currentBatch.set(parentRef, { id: maCMHS, loginCode: maCMHS, studentId: maHS }, {merge: true});
-                        opCount++;
-                        count++;
-
-                        // Gói từng 400 lệnh để không bị quá tải
-                        if (opCount >= 400) {
-                            batches.push(currentBatch.commit());
-                            currentBatch = db.batch();
-                            opCount = 0;
-                        }
+                        currentBatch.set(db.collection('students').doc(maHS), { id: maHS, class: lop, name: ten, parentId: maCMHS });
+                        currentBatch.set(db.collection('parents').doc(maCMHS), { id: maCMHS, loginCode: maCMHS, studentId: maHS }, {merge: true});
+                        opCount += 2; count++;
+                        if (opCount >= 400) { batches.push(currentBatch.commit()); currentBatch = db.batch(); opCount = 0; }
                     }
                 });
-
-                if (opCount > 0) {
-                    batches.push(currentBatch.commit());
-                }
-
-                if(count === 0) {
-                    alert("Không tìm thấy dữ liệu hợp lệ. Vui lòng kiểm tra lại cấu trúc 4 cột trong file Excel.");
-                    btnElement.innerText = originalText;
-                    btnElement.disabled = false;
-                    return;
-                }
-
-                // CƠ CHẾ CHỐNG TREO: Tự động ngắt và báo lỗi nếu Firebase mất quá 15 giây để phản hồi
-                const timeout = new Promise((_, reject) => 
-                    setTimeout(() => reject(new Error("Quá thời gian chờ. Khả năng cao chưa bấm 'Create Database' trong mục Firestore Database.")), 15000)
-                );
-                
-                await Promise.race([Promise.all(batches), timeout]);
-                
-                alert(`✅ Đã nạp thành công ${count} học sinh!`);
-            } catch (error) {
-                console.error(error);
-                alert("❌ Nạp thất bại: " + error.message);
-            } finally {
-                btnElement.innerText = originalText;
-                btnElement.disabled = false;
-                document.getElementById('excel-students').value = ''; 
-            }
-        }, (error) => {
-            alert("❌ Lỗi xử lý file: " + error.message);
-            btnElement.innerText = originalText;
-            btnElement.disabled = false;
-        });
+                if (opCount > 0) batches.push(currentBatch.commit());
+                await Promise.all(batches);
+                alert(`✅ Nạp thành công ${count} học sinh!`);
+            } catch (err) { alert("❌ Lỗi: " + err.message); } 
+            finally { btnElement.innerText = oText; btnElement.disabled = false; document.getElementById('excel-students').value = ''; }
+        }, (err) => { btnElement.innerText = oText; btnElement.disabled = false; });
     }
 
     async function importTeachersFromExcel(btnElement) {
         const file = document.getElementById('excel-teachers').files[0];
-        if(!file) { alert("Vui lòng chọn file Excel!"); return; }
-
-        const originalText = btnElement.innerText;
-        btnElement.innerText = "⏳ Đang nạp dữ liệu...";
-        btnElement.disabled = true;
+        if(!file) return;
+        const oText = btnElement.innerText; btnElement.innerText = "⏳ Đang nạp..."; btnElement.disabled = true;
 
         parseExcel(file, async (rows) => {
             try {
-                let count = 0;
-                let opCount = 0;
-                let batches = [];
-                let currentBatch = db.batch();
-
+                let count = 0; let opCount = 0; let batches = []; let currentBatch = db.batch();
                 rows.forEach(row => {
-                    const maGV = row[0] ? String(row[0]).trim() : '';
-                    const tenGV = row[1] ? String(row[1]).trim() : '';
-                    const monStr = row[2] ? String(row[2]).trim() : '';
-                    const lopStr = row[3] ? String(row[3]).trim() : '';
-
+                    const maGV = row[0] ? String(row[0]).trim() : ''; const tenGV = row[1] ? String(row[1]).trim() : '';
+                    const monStr = row[2] ? String(row[2]).trim() : ''; const lopStr = row[3] ? String(row[3]).trim() : '';
                     if(maGV) {
-                        const mon = monStr.split(',').map(s=>s.trim()).filter(s=>s);
-                        const lop = lopStr.split(',').map(s=>s.trim()).filter(s=>s);
-                        
-                        const gvRef = db.collection('teachers').doc(maGV);
-                        currentBatch.set(gvRef, { id: maGV, loginCode: maGV, name: tenGV, subjects: mon, classes: lop });
-                        opCount++;
-                        count++;
-
-                        if (opCount >= 400) {
-                            batches.push(currentBatch.commit());
-                            currentBatch = db.batch();
-                            opCount = 0;
-                        }
+                        const mon = monStr.split(',').map(s=>s.trim()).filter(s=>s); const lop = lopStr.split(',').map(s=>s.trim()).filter(s=>s);
+                        currentBatch.set(db.collection('teachers').doc(maGV), { id: maGV, loginCode: maGV, name: tenGV, subjects: mon, classes: lop });
+                        opCount++; count++;
+                        if (opCount >= 400) { batches.push(currentBatch.commit()); currentBatch = db.batch(); opCount = 0; }
                     }
                 });
-
-                if (opCount > 0) {
-                    batches.push(currentBatch.commit());
-                }
-
-                if(count === 0) {
-                    alert("Không tìm thấy dữ liệu hợp lệ trong file Excel.");
-                    btnElement.innerText = originalText;
-                    btnElement.disabled = false;
-                    return;
-                }
-
-                const timeout = new Promise((_, reject) => 
-                    setTimeout(() => reject(new Error("Quá thời gian chờ. Khả năng cao chưa bật Firestore Database.")), 15000)
-                );
-                
-                await Promise.race([Promise.all(batches), timeout]);
-
-                alert(`✅ Đã nạp thành công ${count} giáo viên!`);
-            } catch (error) {
-                console.error(error);
-                alert("❌ Nạp thất bại: " + error.message);
-            } finally {
-                btnElement.innerText = originalText;
-                btnElement.disabled = false;
-                document.getElementById('excel-teachers').value = '';
-            }
-        }, (error) => {
-            alert("❌ Lỗi xử lý file: " + error.message);
-            btnElement.innerText = originalText;
-            btnElement.disabled = false;
-        });
+                if (opCount > 0) batches.push(currentBatch.commit());
+                await Promise.all(batches);
+                alert(`✅ Nạp thành công ${count} giáo viên!`);
+            } catch (err) { alert("❌ Lỗi: " + err.message); } 
+            finally { btnElement.innerText = oText; btnElement.disabled = false; document.getElementById('excel-teachers').value = ''; }
+        }, (err) => { btnElement.innerText = oText; btnElement.disabled = false; });
     }
 
     // ==========================================
@@ -472,11 +374,8 @@
     // ==========================================
     function setupTeacherDashboard() {
         document.getElementById('t-teacher-name').innerText = currentUser.name || currentUser.id;
-
-        const classSelect = document.getElementById('teacher-class');
-        const subjectSelect = document.getElementById('teacher-subject');
+        const classSelect = document.getElementById('teacher-class'); const subjectSelect = document.getElementById('teacher-subject');
         classSelect.innerHTML = ''; subjectSelect.innerHTML = '';
-        
         if(currentUser.classes) currentUser.classes.forEach(c => classSelect.add(new Option(c, c)));
         if(currentUser.subjects) currentUser.subjects.forEach(s => subjectSelect.add(new Option(s, s)));
         document.getElementById('attendance-section').style.display = 'none';
@@ -500,24 +399,36 @@
         const attDoc = await attRef.get();
         if(!attDoc.exists) {
             let initialData = { class: selectedClass, subject: selectedSubject, date: today, records: {} };
-            studentsList.forEach(hs => initialData.records[hs.id] = false);
+            // Khởi tạo mảng rỗng thay vì false
+            studentsList.forEach(hs => initialData.records[hs.id] = []);
             await attRef.set(initialData);
         }
 
         if(unsubscribeSnapshot) unsubscribeSnapshot();
         unsubscribeSnapshot = attRef.onSnapshot(doc => {
-            const data = doc.data().records;
+            const data = doc.data().records || {};
             const tbody = document.getElementById('student-list');
             tbody.innerHTML = '';
             
             studentsList.forEach(hs => {
-                const isPresent = data[hs.id] === true;
+                let studentRecords = data[hs.id] || [];
+                // Hỗ trợ ngược dữ liệu cũ (nếu có bản ghi dạng boolean)
+                if(typeof studentRecords === 'boolean') studentRecords = studentRecords ? [{time: 'N/A', ts: 0}] : [];
+                
+                const isPresent = studentRecords.length > 0;
+                
+                let timeBadges = '';
+                if(isPresent) {
+                    timeBadges = studentRecords.map(r => `<span class="time-badge">${r.time}</span>`).join('');
+                }
+
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
                     <td>${hs.id}</td>
                     <td>${hs.name}</td>
-                    <td class="${isPresent ? 'status-present' : 'status-absent'}">
-                        ${isPresent ? 'Có mặt' : 'Vắng'}
+                    <td>
+                        <div class="${isPresent ? 'status-present' : 'status-absent'}">${isPresent ? 'Có mặt' : 'Vắng'}</div>
+                        <div>${timeBadges}</div>
                     </td>
                     <td>
                         <button class="action" onclick="manualUpdateStatus('${hs.id}', ${!isPresent})">
@@ -530,41 +441,80 @@
         });
     }
 
-    async function manualUpdateStatus(studentId, isPresent) {
+    async function manualUpdateStatus(studentId, turnOn) {
         const attRef = db.collection('attendance').doc(currentAttendanceDocId);
-        await attRef.update({ [`records.${studentId}`]: isPresent });
+        
+        if (turnOn) {
+            const nowMs = Date.now();
+            const nowStr = new Date().toLocaleTimeString('vi-VN', {hour: '2-digit', minute:'2-digit'});
+            
+            const doc = await attRef.get();
+            let records = doc.data().records[studentId];
+            if(!Array.isArray(records)) records = [];
+            
+            records.push({ time: nowStr + ' (Bù)', ts: nowMs });
+            await attRef.update({ [`records.${studentId}`]: records });
+        } else {
+            // Nếu đánh vắng thủ công, xóa sạch mảng
+            await attRef.update({ [`records.${studentId}`]: [] });
+        }
     }
 
     // ==========================================
-    // 5. CHỨC NĂNG QUÉT QR
+    // 5. CHỨC NĂNG QUÉT QR (ĐA MỐC THỜI GIAN)
     // ==========================================
     let isScannerRunning = false;
     function toggleScanner() {
         const qrBox = document.getElementById('qr-reader');
         if(isScannerRunning) {
-            html5QrcodeScanner.clear();
-            qrBox.style.display = 'none';
-            isScannerRunning = false;
+            html5QrcodeScanner.clear(); qrBox.style.display = 'none'; isScannerRunning = false;
         } else {
             qrBox.style.display = 'block';
-            html5QrcodeScanner = new Html5QrcodeScanner("qr-reader", { fps: 10, qrbox: {width: 250, height: 250} }, false);
+            html5QrcodeScanner = new Html5QrcodeScanner("qr-reader", { 
+                fps: 15, qrbox: {width: 250, height: 250}, videoConstraints: { advanced: [{ focusMode: "continuous" }] }
+            }, false);
             html5QrcodeScanner.render(onScanSuccess);
             isScannerRunning = true;
         }
     }
 
-    function onScanSuccess(decodedText, decodedResult) {
-        html5QrcodeScanner.pause(true);
-        setTimeout(() => html5QrcodeScanner.resume(), 2000);
+    async function onScanSuccess(decodedText, decodedResult) {
+        const studentId = decodedText.trim();
+        const nowMs = Date.now();
+        const nowStr = new Date().toLocaleTimeString('vi-VN', {hour: '2-digit', minute:'2-digit'});
+        
+        // 1. Chặn rung tay: Không xử lý mã trùng nếu quét cách nhau dưới 3 giây
+        if (recentScans[studentId] && nowMs - recentScans[studentId] < 3000) return; 
+        recentScans[studentId] = nowMs;
+        
+        playBeep();
 
+        // 2. Logic kiểm tra mốc 30 phút trên Firebase
         const attRef = db.collection('attendance').doc(currentAttendanceDocId);
-        attRef.update({
-            [`records.${decodedText.trim()}`]: true
-        }).then(() => {
-            alert(`Đã điểm danh CÓ MẶT: ${decodedText}`);
-        }).catch(err => {
-            alert("Mã HS không thuộc lớp này hoặc có lỗi xảy ra!");
-        });
+        const doc = await attRef.get();
+        if(doc.exists) {
+            let allRecords = doc.data().records || {};
+            let studentRecords = allRecords[studentId] || [];
+            
+            if(typeof studentRecords === 'boolean') studentRecords = studentRecords ? [{time: 'N/A', ts: 0}] : [];
+            
+            // Nếu đã từng điểm danh hôm nay
+            if (studentRecords.length > 0) {
+                const lastRecord = studentRecords[studentRecords.length - 1];
+                const diffMinutes = (nowMs - lastRecord.ts) / (1000 * 60);
+                
+                // Nếu chưa qua 30 phút, từ chối ghi nhận thêm
+                if (diffMinutes < 30) {
+                    showToast(`⚠️ [${studentId}] Đã quét trước đó (cách đây ${Math.floor(diffMinutes)} phút)`, true);
+                    return;
+                }
+            }
+
+            // Ghi nhận mốc thời gian mới
+            studentRecords.push({ time: nowStr, ts: nowMs });
+            await attRef.update({ [`records.${studentId}`]: studentRecords });
+            showToast(`✅ [${studentId}] Ghi nhận lúc ${nowStr}`);
+        }
     }
 
     // ==========================================
@@ -594,14 +544,19 @@
 
         snapshot.forEach(doc => {
             const data = doc.data();
-            const isPresent = data.records[currentUser.studentId];
+            let studentRecords = data.records[currentUser.studentId] || [];
+            if(typeof studentRecords === 'boolean') studentRecords = studentRecords ? [{time: 'N/A', ts: 0}] : [];
+            
+            let statusHtml = '';
+            if(studentRecords.length > 0) {
+                const timeBadges = studentRecords.map(r => `<span class="time-badge">${r.time}</span>`).join('');
+                statusHtml = `<div class="status-present">Có mặt</div><div>${timeBadges}</div>`;
+            } else {
+                statusHtml = `<div class="status-absent">Vắng</div>`;
+            }
+
             const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td>${data.subject}</td>
-                <td class="${isPresent ? 'status-present' : 'status-absent'}">
-                    ${isPresent ? 'Có mặt' : 'Vắng'}
-                </td>
-            `;
+            tr.innerHTML = `<td>${data.subject}</td><td>${statusHtml}</td>`;
             tbody.appendChild(tr);
         });
     }
