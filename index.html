@@ -1,8 +1,9 @@
+<!DOCTYPE html>
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>App Điểm Danh Bằng QR Code</title>
+    <title>App Điểm Danh Bằng QR Code (Bản Tối Ưu)</title>
     <!-- Tải thư viện quét QR -->
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
     <style>
@@ -214,10 +215,19 @@
         }
     }
 
-    // Cấu hình máy quét QR
+    // Cấu hình máy quét QR (Bản Tối Ưu Độ Phân Giải & Lấy Nét)
     const html5QrcodeScanner = new Html5QrcodeScanner(
         "reader", 
-        { fps: 10, qrbox: {width: 250, height: 250} }, 
+        { 
+            fps: 15, 
+            qrbox: { width: 250, height: 250 },
+            videoConstraints: {
+                facingMode: "environment", 
+                width: { min: 1280, ideal: 1920, max: 2560 }, 
+                height: { min: 720, ideal: 1080, max: 1440 },
+                advanced: [{ focusMode: "continuous" }] 
+            }
+        }, 
         /* verbose= */ false
     );
     html5QrcodeScanner.render(onScanSuccess);
