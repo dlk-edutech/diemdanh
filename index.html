@@ -24,9 +24,9 @@
         button { width: 100%; padding: 10px; background: var(--primary); color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; margin-top: 10px; transition: opacity 0.2s; }
         button:hover { opacity: 0.9; }
         button:disabled { background: #9ca3af; cursor: not-allowed; }
-        button.logout { background: #dc2626; margin-top: 20px; }
+        button.logout { background: #dc2626; }
         button.action { width: auto; padding: 5px 15px; background: #10b981; }
-        button.secondary { background: #6b7280; margin-top: 0; height: 100%; }
+        button.secondary { background: #6b7280; }
         table { width: 100%; border-collapse: collapse; margin-top: 15px; }
         th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
         th { background: #f8fafc; }
@@ -37,8 +37,9 @@
         .nav-tabs button { background: #e5e7eb; color: var(--text); }
         .nav-tabs button.active-tab { background: var(--primary); color: white; }
         .excel-guide { background: #fdf2f8; padding: 10px; border-radius: 5px; font-size: 0.9em; margin-bottom: 10px; border: 1px dashed #f472b6; }
-        .settings-section { margin-top: 30px; border-top: 1px solid #ccc; padding-top: 15px; background: #f9fafb; padding: 15px; border-radius: 8px;}
         .flex-row { display: flex; gap: 10px; align-items: center; }
+        .flex-bottom { display: flex; gap: 10px; margin-top: 30px; padding-top: 15px; border-top: 1px solid #ccc; }
+        .flex-bottom button { margin-top: 0; flex: 1; padding: 12px; }
         .welcome-text { text-align: center; font-style: italic; color: #4b5563; margin-top: -10px; margin-bottom: 20px; }
         
         #scan-toast {
@@ -79,9 +80,9 @@
         </div>
         <div class="flex-row">
             <input type="file" id="excel-students" accept=".xlsx, .xls" style="flex: 1;">
-            <button class="action secondary" onclick="downloadStudentSample()">📥 Tải File Mẫu</button>
+            <button class="action secondary" onclick="downloadStudentSample()" style="margin-top: 0; height: 100%;">📥 Tải File Mẫu</button>
         </div>
-        <button class="action" onclick="importStudentsFromExcel(this)">Nạp Danh Sách Học Sinh</button>
+        <button class="action" style="width: 100%;" onclick="importStudentsFromExcel(this)">Nạp Danh Sách Học Sinh</button>
 
         <h3 style="margin-top: 30px;">2. Nạp danh sách Giáo Viên</h3>
         <div class="excel-guide">
@@ -89,11 +90,13 @@
         </div>
         <div class="flex-row">
             <input type="file" id="excel-teachers" accept=".xlsx, .xls" style="flex: 1;">
-            <button class="action secondary" onclick="downloadTeacherSample()">📥 Tải File Mẫu</button>
+            <button class="action secondary" onclick="downloadTeacherSample()" style="margin-top: 0; height: 100%;">📥 Tải File Mẫu</button>
         </div>
-        <button class="action" onclick="importTeachersFromExcel(this)">Nạp Danh Sách Giáo Viên</button>
+        <button class="action" style="width: 100%;" onclick="importTeachersFromExcel(this)">Nạp Danh Sách Giáo Viên</button>
 
-        <button class="logout" onclick="logout()">Đăng Xuất</button>
+        <div class="flex-bottom" style="margin-top: 40px;">
+            <button class="logout" onclick="logout()">Đăng Xuất</button>
+        </div>
     </div>
 
     <!-- MÀN HÌNH GIÁO VIÊN -->
@@ -130,13 +133,11 @@
             </table>
         </div>
 
-        <div class="settings-section">
-            <h3>Đổi Mã GV (Mã Đăng Nhập)</h3>
-            <input type="text" id="new-gv-code" placeholder="Nhập mã đăng nhập mới...">
-            <button class="action" style="margin-top: 10px;" onclick="changeLoginCode('teachers', 'new-gv-code')">Cập Nhật Mã Mới</button>
+        <!-- Các nút chức năng gộp chung xuống dưới -->
+        <div class="flex-bottom">
+            <button class="action secondary" onclick="promptChangeLoginCode('teachers')">🔑 Đổi Mã Đăng Nhập</button>
+            <button class="logout" onclick="logout()">Đăng Xuất</button>
         </div>
-
-        <button class="logout" onclick="logout()">Đăng Xuất</button>
     </div>
 
     <!-- MÀN HÌNH PHỤ HUYNH -->
@@ -159,13 +160,11 @@
             <tbody id="parent-attendance-list"></tbody>
         </table>
 
-        <div class="settings-section">
-            <h3>Đổi Mã CMHS (Mã Đăng Nhập)</h3>
-            <input type="text" id="new-cmhs-code" placeholder="Nhập mã đăng nhập mới...">
-            <button class="action" style="margin-top: 10px;" onclick="changeLoginCode('parents', 'new-cmhs-code')">Cập Nhật Mã Mới</button>
+        <!-- Các nút chức năng gộp chung xuống dưới -->
+        <div class="flex-bottom">
+            <button class="action secondary" onclick="promptChangeLoginCode('parents')">🔑 Đổi Mã Đăng Nhập</button>
+            <button class="logout" onclick="logout()">Đăng Xuất</button>
         </div>
-
-        <button class="logout" onclick="logout()">Đăng Xuất</button>
     </div>
 </div>
 
@@ -220,7 +219,7 @@
     }
 
     // ==========================================
-    // 2. LOGIC ĐĂNG NHẬP 
+    // 2. LOGIC ĐĂNG NHẬP & ĐỔI MÃ GỌN
     // ==========================================
     function switchLogin(role) {
         currentRole = role;
@@ -279,14 +278,29 @@
         showScreen('login-screen');
     }
 
-    async function changeLoginCode(collectionName, inputId) {
-        const newCode = document.getElementById(inputId).value.trim();
-        if(newCode.length < 4) { alert("Mã đăng nhập mới phải từ 4 ký tự trở lên!"); return; }
-        const checkSnap = await db.collection(collectionName).where("loginCode", "==", newCode).get();
-        if(!checkSnap.empty) { alert("Mã này đã có người sử dụng!"); return; }
-        await db.collection(collectionName).doc(currentUser.id).update({ loginCode: newCode });
-        currentUser.loginCode = newCode;
-        alert("Đổi mã thành công!"); document.getElementById(inputId).value = '';
+    // Giao diện đổi mã mới gọn gàng (dùng Prompt)
+    async function promptChangeLoginCode(collectionName) {
+        const newCode = prompt("Vui lòng nhập mã đăng nhập mới (Từ 4 ký tự trở lên):");
+        if (newCode === null) return; // Người dùng bấm Hủy
+        
+        const trimmedCode = newCode.trim();
+        if(trimmedCode.length < 4) { 
+            alert("Mã đăng nhập mới phải từ 4 ký tự trở lên!"); 
+            return; 
+        }
+        
+        try {
+            const checkSnap = await db.collection(collectionName).where("loginCode", "==", trimmedCode).get();
+            if(!checkSnap.empty) { 
+                alert("Mã này đã có người sử dụng. Vui lòng chọn mã khác!"); 
+                return; 
+            }
+            await db.collection(collectionName).doc(currentUser.id).update({ loginCode: trimmedCode });
+            currentUser.loginCode = trimmedCode;
+            alert("✅ Đổi mã thành công! Từ lần sau hãy dùng mã này để vào hệ thống.");
+        } catch (error) {
+            alert("Lỗi khi cập nhật mã. Vui lòng thử lại.");
+        }
     }
 
     // ==========================================
@@ -456,7 +470,7 @@
     }
 
     // ==========================================
-    // 5. CHỨC NĂNG QUÉT QR (CAMERA SAU MẶC ĐỊNH & KIỂM TRA 30 PHÚT)
+    // 5. CHỨC NĂNG QUÉT QR
     // ==========================================
     let isScannerRunning = false;
     function toggleScanner() {
@@ -468,10 +482,7 @@
             html5QrcodeScanner = new Html5QrcodeScanner("qr-reader", { 
                 fps: 15, 
                 qrbox: {width: 250, height: 250}, 
-                videoConstraints: { 
-                    facingMode: "environment", // Ưu tiên chọn camera sau
-                    advanced: [{ focusMode: "continuous" }] 
-                }
+                videoConstraints: { facingMode: "environment", advanced: [{ focusMode: "continuous" }] }
             }, false);
             html5QrcodeScanner.render(onScanSuccess);
             isScannerRunning = true;
@@ -483,13 +494,11 @@
         const nowMs = Date.now();
         const nowStr = new Date().toLocaleTimeString('vi-VN', {hour: '2-digit', minute:'2-digit'});
         
-        // 1. Chặn rung tay: Không xử lý mã trùng nếu quét cách nhau dưới 3 giây
         if (recentScans[studentId] && nowMs - recentScans[studentId] < 3000) return; 
         recentScans[studentId] = nowMs;
         
         playBeep();
 
-        // 2. Logic kiểm tra mốc 30 phút trên Firebase
         const attRef = db.collection('attendance').doc(currentAttendanceDocId);
         const doc = await attRef.get();
         if(doc.exists) {
@@ -498,19 +507,16 @@
             
             if(typeof studentRecords === 'boolean') studentRecords = studentRecords ? [{time: 'N/A', ts: 0}] : [];
             
-            // Nếu đã từng điểm danh hôm nay
             if (studentRecords.length > 0) {
                 const lastRecord = studentRecords[studentRecords.length - 1];
                 const diffMinutes = (nowMs - lastRecord.ts) / (1000 * 60);
                 
-                // Nếu chưa qua 30 phút, từ chối ghi nhận thêm
                 if (diffMinutes < 30) {
                     showToast(`⚠️ [${studentId}] Đã quét trước đó (cách đây ${Math.floor(diffMinutes)} phút)`, true);
                     return;
                 }
             }
 
-            // Ghi nhận mốc thời gian mới
             studentRecords.push({ time: nowStr, ts: nowMs });
             await attRef.update({ [`records.${studentId}`]: studentRecords });
             showToast(`✅ [${studentId}] Ghi nhận lúc ${nowStr}`);
