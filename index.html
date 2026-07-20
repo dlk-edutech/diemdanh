@@ -1,284 +1,448 @@
-<!DOCTYPE html>
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>App Điểm Danh Bằng QR Code (Bản Tối Ưu)</title>
-    <!-- Tải thư viện quét QR -->
+    <title>Hệ Thống Điểm Danh Trực Tuyến</title>
+    <!-- Firebase App (the core Firebase SDK) -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <!-- Firebase Firestore -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    <!-- Thư viện quét QR -->
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
     <style>
-        :root {
-            --primary: #4f46e5;
-            --bg: #f9fafb;
-            --text: #1f2937;
-            --border: #e5e7eb;
-        }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: var(--bg);
-            color: var(--text);
-            margin: 0;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-        .container {
-            width: 100%;
-            max-width: 600px;
-            background: white;
-            padding: 20px;
-            border-radius: 12px;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-        }
-        h2 {
-            text-align: center;
-            color: var(--primary);
-            margin-top: 0;
-        }
-        #reader {
-            width: 100%;
-            border-radius: 8px;
-            overflow: hidden;
-            margin-bottom: 20px;
-        }
-        .controls {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
-            justify-content: space-between;
-        }
-        button {
-            background-color: var(--primary);
-            color: white;
-            border: none;
-            padding: 10px 16px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: 600;
-            flex: 1;
-            transition: opacity 0.2s;
-        }
-        button:hover {
-            opacity: 0.9;
-        }
-        button.danger {
-            background-color: #ef4444;
-        }
-        button.success {
-            background-color: #10b981;
-        }
-        .alert {
-            padding: 12px;
-            background-color: #d1fae5;
-            color: #065f46;
-            border-radius: 6px;
-            margin-bottom: 20px;
-            text-align: center;
-            font-weight: bold;
-            display: none;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 10px;
-        }
-        th, td {
-            padding: 12px;
-            text-align: left;
-            border-bottom: 1px solid var(--border);
-        }
-        th {
-            background-color: #f3f4f6;
-            font-weight: 600;
-        }
-        .empty-state {
-            text-align: center;
-            padding: 20px;
-            color: #6b7280;
-        }
+        :root { --primary: #2563eb; --bg: #f3f4f6; --text: #1f2937; }
+        body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h1, h2, h3 { color: var(--primary); text-align: center; }
+        .screen { display: none; }
+        .active { display: block; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; font-weight: bold; margin-bottom: 5px; }
+        input, select, textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        button { width: 100%; padding: 10px; background: var(--primary); color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        button:hover { opacity: 0.9; }
+        button.logout { background: #dc2626; margin-top: 20px; }
+        button.action { width: auto; padding: 5px 15px; background: #10b981; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+        th { background: #f8fafc; }
+        .status-present { color: #16a34a; font-weight: bold; }
+        .status-absent { color: #dc2626; font-weight: bold; }
+        #qr-reader { width: 100%; max-width: 400px; margin: 0 auto; display: none; }
+        .nav-tabs { display: flex; gap: 10px; margin-bottom: 20px; }
+        .nav-tabs button { background: #e5e7eb; color: var(--text); }
+        .nav-tabs button.active-tab { background: var(--primary); color: white; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>Điểm Danh Lớp Học</h2>
-    
-    <!-- Khu vực camera quét QR -->
-    <div id="reader"></div>
+    <h1 id="main-title">Hệ Thống Điểm Danh</h1>
 
-    <!-- Thông báo quét thành công -->
-    <div id="success-alert" class="alert"></div>
-
-    <!-- Nút điều khiển -->
-    <div class="controls">
-        <button class="success" onclick="exportCSV()">Tải file Excel (CSV)</button>
-        <button class="danger" onclick="clearData()">Xóa dữ liệu</button>
+    <!-- MÀN HÌNH ĐĂNG NHẬP (Lựa chọn vai trò) -->
+    <div id="login-screen" class="screen active">
+        <div class="nav-tabs">
+            <button class="active-tab" onclick="switchLogin('teacher')">Giáo viên</button>
+            <button onclick="switchLogin('parent')">Phụ huynh</button>
+            <button onclick="switchLogin('admin')">Quản trị viên</button>
+        </div>
+        
+        <div class="form-group">
+            <label id="lbl-username">Tài khoản (Mã GV / Mã CMHS)</label>
+            <input type="text" id="username" placeholder="Nhập mã đăng nhập">
+        </div>
+        <div class="form-group" id="group-password">
+            <label>Mật khẩu</label>
+            <input type="password" id="password" placeholder="Nhập mật khẩu">
+        </div>
+        <button onclick="handleLogin()">Đăng Nhập</button>
     </div>
 
-    <!-- Danh sách học sinh đã quét -->
-    <div style="overflow-x: auto;">
+    <!-- MÀN HÌNH ADMIN -->
+    <div id="admin-screen" class="screen">
+        <h2>Khu Vực Quản Trị</h2>
+        
+        <h3>1. Nạp danh sách Học Sinh</h3>
+        <p><i>Cú pháp: Mã HS, Lớp, Họ Tên, Mã CMHS</i></p>
+        <textarea id="data-students" rows="5" placeholder="Ví dụ:&#10;HS01, 10A1, Nguyễn Văn A, CMHS01&#10;HS02, 10A1, Trần Thị B, CMHS02"></textarea>
+        <button class="action" onclick="importStudents()">Lưu Danh Sách Học Sinh</button>
+
+        <h3 style="margin-top: 30px;">2. Nạp danh sách Giáo Viên</h3>
+        <p><i>Cú pháp: Mã Đăng Nhập, Mật khẩu, Môn dạy (cách nhau bằng -), Lớp dạy (cách nhau bằng -)</i></p>
+        <textarea id="data-teachers" rows="5" placeholder="Ví dụ:&#10;GV01, 123456, Toán-Lý, 10A1-10A2"></textarea>
+        <button class="action" onclick="importTeachers()">Lưu Danh Sách Giáo Viên</button>
+
+        <button class="logout" onclick="logout()">Đăng Xuất</button>
+    </div>
+
+    <!-- MÀN HÌNH GIÁO VIÊN -->
+    <div id="teacher-screen" class="screen">
+        <h2>Điểm Danh Lớp Học</h2>
+        <div class="form-group">
+            <label>Chọn Lớp:</label>
+            <select id="teacher-class"></select>
+        </div>
+        <div class="form-group">
+            <label>Chọn Môn:</label>
+            <select id="teacher-subject"></select>
+        </div>
+        <button onclick="loadAttendanceList()">Mở Danh Sách Điểm Danh</button>
+        
+        <div id="attendance-section" style="display: none; margin-top: 20px;">
+            <button class="action" style="background: #10b981; margin-bottom:15px" onclick="toggleScanner()">📷 Mở/Tắt Quét QR</button>
+            <div id="qr-reader"></div>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>Mã HS</th>
+                        <th>Họ Tên</th>
+                        <th>Trạng thái</th>
+                        <th>Thao tác</th>
+                    </tr>
+                </thead>
+                <tbody id="student-list"></tbody>
+            </table>
+        </div>
+        <button class="logout" onclick="logout()">Đăng Xuất</button>
+    </div>
+
+    <!-- MÀN HÌNH PHỤ HUYNH -->
+    <div id="parent-screen" class="screen">
+        <h2>Thông tin Điểm Danh của Con</h2>
+        
+        <div style="background: #e0f2fe; padding: 15px; border-radius: 5px; margin-bottom: 20px;">
+            <p><strong>Học sinh:</strong> <span id="p-student-name">...</span></p>
+            <p><strong>Lớp:</strong> <span id="p-student-class">...</span></p>
+        </div>
+
+        <h3>Tình trạng hôm nay (<span id="today-date"></span>)</h3>
         <table>
             <thead>
                 <tr>
-                    <th>STT</th>
-                    <th>Thông tin Học sinh</th>
-                    <th>Thời gian quét</th>
+                    <th>Môn học</th>
+                    <th>Trạng thái</th>
                 </tr>
             </thead>
-            <tbody id="attendance-list">
-                <!-- Dữ liệu sẽ được render ở đây -->
-            </tbody>
+            <tbody id="parent-attendance-list"></tbody>
         </table>
-        <div id="empty-state" class="empty-state">Chưa có dữ liệu điểm danh.</div>
+
+        <div style="margin-top: 30px; border-top: 1px solid #ccc; padding-top: 15px;">
+            <h3>Đổi Mật Khẩu (Mã CMHS)</h3>
+            <input type="password" id="new-cmhs-pass" placeholder="Mật khẩu mới">
+            <button class="action" style="margin-top: 10px;" onclick="changeParentPassword()">Cập Nhật Mật Khẩu</button>
+        </div>
+
+        <button class="logout" onclick="logout()">Đăng Xuất</button>
     </div>
 </div>
 
 <script>
-    // Khởi tạo mảng lưu trữ từ LocalStorage
-    let attendanceData = JSON.parse(localStorage.getItem('attendanceData')) || [];
-    let lastScannedText = ""; // Biến chống quét lặp lại liên tục 1 mã
-    let scanTimeout;
+    // ==========================================
+    // 1. CẤU HÌNH FIREBASE 
+    // ==========================================
+    const firebaseConfig = {
+        apiKey: "AIzaSyD6w6Rx3R_Zl1f4ONTfk4zNlyxEdDVEM1w",
+        authDomain: "diemdanhs1tp.firebaseapp.com",
+        databaseURL: "https://diemdanhs1tp-default-rtdb.asia-southeast1.firebasedatabase.app",
+        projectId: "diemdanhs1tp",
+        storageBucket: "diemdanhs1tp.firebasestorage.app",
+        messagingSenderId: "557913057858",
+        appId: "1:557913057858:web:509cf8f62cfdd325155bdb"
+    };
 
-    // Hàm tạo âm thanh Beep khi quét thành công (Đã được làm cho kêu to hơn)
-    function playBeep() {
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    // Khởi tạo Firebase
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    // Biến toàn cục
+    let currentRole = 'teacher';
+    let currentUser = null;
+    let html5QrcodeScanner = null;
+    let currentAttendanceDocId = null;
+    let unsubscribeSnapshot = null;
+
+    // ==========================================
+    // 2. LOGIC GIAO DIỆN & ĐĂNG NHẬP
+    // ==========================================
+    function switchLogin(role) {
+        currentRole = role;
+        document.querySelectorAll('.nav-tabs button').forEach(btn => btn.classList.remove('active-tab'));
+        event.target.classList.add('active-tab');
         
-        // Thêm bộ khuếch đại âm thanh
-        const gainNode = audioCtx.createGain();
-        gainNode.gain.setValueAtTime(2.0, audioCtx.currentTime); // Tăng gấp đôi âm lượng gốc
-        gainNode.connect(audioCtx.destination);
-
-        const oscillator = audioCtx.createOscillator();
-        // Đổi sang sóng vuông (square) - nghe to, gắt và giống tiếng máy quét siêu thị hơn
-        oscillator.type = 'square'; 
-        oscillator.frequency.setValueAtTime(900, audioCtx.currentTime); 
-        
-        oscillator.connect(gainNode);
-        oscillator.start();
-        setTimeout(() => oscillator.stop(), 150);
-    }
-
-    // Hiển thị thông báo trên màn hình
-    function showAlert(message) {
-        const alertBox = document.getElementById('success-alert');
-        alertBox.textContent = message;
-        alertBox.style.display = 'block';
-        clearTimeout(scanTimeout);
-        scanTimeout = setTimeout(() => {
-            alertBox.style.display = 'none';
-        }, 3000);
-    }
-
-    // Render danh sách ra bảng
-    function renderTable() {
-        const tbody = document.getElementById('attendance-list');
-        const emptyState = document.getElementById('empty-state');
-        tbody.innerHTML = '';
-        
-        if (attendanceData.length === 0) {
-            emptyState.style.display = 'block';
+        if(role === 'admin') {
+            document.getElementById('lbl-username').style.display = 'none';
+            document.getElementById('username').style.display = 'none';
+            document.getElementById('group-password').style.display = 'block';
+        } else if (role === 'parent') {
+            document.getElementById('lbl-username').innerText = 'Mã CMHS';
+            document.getElementById('username').style.display = 'block';
+            document.getElementById('group-password').style.display = 'block';
         } else {
-            emptyState.style.display = 'none';
-            attendanceData.forEach((item, index) => {
+            document.getElementById('lbl-username').innerText = 'Mã Đăng Nhập (GV)';
+            document.getElementById('username').style.display = 'block';
+            document.getElementById('group-password').style.display = 'block';
+        }
+    }
+
+    function showScreen(screenId) {
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        document.getElementById(screenId).classList.add('active');
+    }
+
+    async function handleLogin() {
+        const username = document.getElementById('username').value.trim();
+        const password = document.getElementById('password').value.trim();
+
+        if(currentRole === 'admin') {
+            if(password === '11043006') {
+                showScreen('admin-screen');
+            } else {
+                alert("Mã quản trị không đúng!");
+            }
+        } 
+        else if (currentRole === 'teacher') {
+            const docRef = db.collection("teachers").doc(username);
+            const docSnap = await docRef.get();
+            if (docSnap.exists && docSnap.data().password === password) {
+                currentUser = { id: username, ...docSnap.data() };
+                setupTeacherDashboard();
+                showScreen('teacher-screen');
+            } else {
+                alert("Sai Mã GV hoặc Mật khẩu!");
+            }
+        }
+        else if (currentRole === 'parent') {
+            const docRef = db.collection("parents").doc(username);
+            const docSnap = await docRef.get();
+            if (docSnap.exists && docSnap.data().password === password) {
+                currentUser = { id: username, ...docSnap.data() };
+                setupParentDashboard();
+                showScreen('parent-screen');
+            } else {
+                alert("Sai Mã CMHS hoặc Mật khẩu!");
+            }
+        }
+    }
+
+    function logout() {
+        if(html5QrcodeScanner) {
+            html5QrcodeScanner.clear();
+            document.getElementById('qr-reader').style.display = 'none';
+        }
+        if(unsubscribeSnapshot) unsubscribeSnapshot();
+        currentUser = null;
+        document.getElementById('username').value = '';
+        document.getElementById('password').value = '';
+        showScreen('login-screen');
+    }
+
+    // ==========================================
+    // 3. CHỨC NĂNG ADMIN
+    // ==========================================
+    async function importStudents() {
+        const data = document.getElementById('data-students').value.trim();
+        const lines = data.split('\n');
+        const batch = db.batch();
+        
+        lines.forEach(line => {
+            // Đã cập nhật lại thứ tự map cho đúng yêu cầu
+            const [maHS, lop, ten, maCMHS] = line.split(',').map(s => s.trim());
+            if(maHS && lop && maCMHS) {
+                // Lưu HS
+                const hsRef = db.collection('students').doc(maHS);
+                batch.set(hsRef, { id: maHS, class: lop, parentId: maCMHS, name: ten || '' });
+                // Tạo tài khoản Parent mặc định (Mật khẩu bằng Mã CMHS)
+                const parentRef = db.collection('parents').doc(maCMHS);
+                batch.set(parentRef, { id: maCMHS, password: maCMHS, studentId: maHS }, {merge: true});
+            }
+        });
+        
+        await batch.commit();
+        alert("Nạp danh sách học sinh thành công!");
+    }
+
+    async function importTeachers() {
+        const data = document.getElementById('data-teachers').value.trim();
+        const lines = data.split('\n');
+        const batch = db.batch();
+        
+        lines.forEach(line => {
+            const [maGV, pass, monStr, lopStr] = line.split(',').map(s => s.trim());
+            if(maGV && pass) {
+                const mon = monStr.split('-').map(s=>s.trim());
+                const lop = lopStr.split('-').map(s=>s.trim());
+                const gvRef = db.collection('teachers').doc(maGV);
+                batch.set(gvRef, { id: maGV, password: pass, subjects: mon, classes: lop });
+            }
+        });
+        
+        await batch.commit();
+        alert("Nạp danh sách giáo viên thành công!");
+    }
+
+    // ==========================================
+    // 4. CHỨC NĂNG GIÁO VIÊN
+    // ==========================================
+    function setupTeacherDashboard() {
+        const classSelect = document.getElementById('teacher-class');
+        const subjectSelect = document.getElementById('teacher-subject');
+        classSelect.innerHTML = ''; subjectSelect.innerHTML = '';
+        
+        currentUser.classes.forEach(c => classSelect.add(new Option(c, c)));
+        currentUser.subjects.forEach(s => subjectSelect.add(new Option(s, s)));
+        document.getElementById('attendance-section').style.display = 'none';
+    }
+
+    async function loadAttendanceList() {
+        document.getElementById('attendance-section').style.display = 'block';
+        const selectedClass = document.getElementById('teacher-class').value;
+        const selectedSubject = document.getElementById('teacher-subject').value;
+        const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+        
+        currentAttendanceDocId = `${today}_${selectedClass}_${selectedSubject}`;
+        
+        // 1. Lấy danh sách HS của lớp này
+        const studentsRef = db.collection('students').where('class', '==', selectedClass);
+        const snapshot = await studentsRef.get();
+        let studentsList = [];
+        snapshot.forEach(doc => studentsList.push(doc.data()));
+        
+        // Sắp xếp theo Mã HS
+        studentsList.sort((a, b) => a.id.localeCompare(b.id));
+
+        // 2. Thiết lập lắng nghe Realtime trên file điểm danh hôm nay
+        const attRef = db.collection('attendance').doc(currentAttendanceDocId);
+        
+        // Nếu chưa có file điểm danh hôm nay cho lớp/môn này -> Tạo mới (tất cả Vắng)
+        const attDoc = await attRef.get();
+        if(!attDoc.exists) {
+            let initialData = { class: selectedClass, subject: selectedSubject, date: today, records: {} };
+            studentsList.forEach(hs => initialData.records[hs.id] = false); // false = Vắng
+            await attRef.set(initialData);
+        }
+
+        // Lắng nghe thay đổi
+        if(unsubscribeSnapshot) unsubscribeSnapshot();
+        unsubscribeSnapshot = attRef.onSnapshot(doc => {
+            const data = doc.data().records;
+            const tbody = document.getElementById('student-list');
+            tbody.innerHTML = '';
+            
+            studentsList.forEach(hs => {
+                const isPresent = data[hs.id] === true;
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
-                    <td>${attendanceData.length - index}</td>
-                    <td><strong>${item.info}</strong></td>
-                    <td>${item.time}</td>
+                    <td>${hs.id}</td>
+                    <td>${hs.name}</td>
+                    <td class="${isPresent ? 'status-present' : 'status-absent'}">
+                        ${isPresent ? 'Có mặt' : 'Vắng'}
+                    </td>
+                    <td>
+                        <button class="action" onclick="manualUpdateStatus('${hs.id}', ${!isPresent})">
+                            Đổi thành ${isPresent ? 'Vắng' : 'Có mặt'}
+                        </button>
+                    </td>
                 `;
                 tbody.appendChild(tr);
             });
-        }
+        });
     }
 
-    // Xử lý khi quét QR thành công
-    function onScanSuccess(decodedText, decodedResult) {
-        // Chống quét trùng lặp 1 mã liên tục trong 5 giây
-        if (decodedText === lastScannedText) return; 
-        
-        lastScannedText = decodedText;
-        setTimeout(() => lastScannedText = "", 5000); // Sau 5s mới cho quét lại mã này
+    // Thủ công đổi trạng thái
+    async function manualUpdateStatus(studentId, isPresent) {
+        const attRef = db.collection('attendance').doc(currentAttendanceDocId);
+        await attRef.update({
+            [`records.${studentId}`]: isPresent
+        });
+    }
 
-        playBeep();
-        
-        const now = new Date();
-        const timeString = now.toLocaleTimeString('vi-VN') + ' - ' + now.toLocaleDateString('vi-VN');
-
-        // Kiểm tra xem hs này đã điểm danh chưa
-        const isExist = attendanceData.some(record => record.info === decodedText);
-        
-        if(isExist) {
-            showAlert(`⚠️ Học sinh [${decodedText}] đã được điểm danh trước đó!`);
+    // ==========================================
+    // 5. CHỨC NĂNG QUÉT QR
+    // ==========================================
+    let isScannerRunning = false;
+    function toggleScanner() {
+        const qrBox = document.getElementById('qr-reader');
+        if(isScannerRunning) {
+            html5QrcodeScanner.clear();
+            qrBox.style.display = 'none';
+            isScannerRunning = false;
         } else {
-            // Thêm vào đầu mảng
-            attendanceData.unshift({
-                info: decodedText,
-                time: timeString
-            });
-            // Lưu vào bộ nhớ trình duyệt
-            localStorage.setItem('attendanceData', JSON.stringify(attendanceData));
-            showAlert(`✅ Đã ghi nhận: ${decodedText}`);
-            renderTable();
+            qrBox.style.display = 'block';
+            html5QrcodeScanner = new Html5QrcodeScanner("qr-reader", { fps: 10, qrbox: {width: 250, height: 250} }, false);
+            html5QrcodeScanner.render(onScanSuccess);
+            isScannerRunning = true;
         }
     }
 
-    // Cấu hình máy quét QR (Bản Tối Ưu Độ Phân Giải & Lấy Nét)
-    const html5QrcodeScanner = new Html5QrcodeScanner(
-        "reader", 
-        { 
-            fps: 15, 
-            qrbox: { width: 250, height: 250 },
-            videoConstraints: {
-                facingMode: "environment", 
-                width: { min: 1280, ideal: 1920, max: 2560 }, 
-                height: { min: 720, ideal: 1080, max: 1440 },
-                advanced: [{ focusMode: "continuous" }] 
-            }
-        }, 
-        /* verbose= */ false
-    );
-    html5QrcodeScanner.render(onScanSuccess);
+    function onScanSuccess(decodedText, decodedResult) {
+        // decodedText chính là Mã HS
+        // Tạm ngưng máy quét 2s để tránh quét lặp liên tục
+        html5QrcodeScanner.pause(true);
+        setTimeout(() => html5QrcodeScanner.resume(), 2000);
 
-    // Xuất dữ liệu ra file CSV
-    function exportCSV() {
-        if (attendanceData.length === 0) {
-            alert("Không có dữ liệu để xuất!");
+        // Cập nhật lên Firebase
+        const attRef = db.collection('attendance').doc(currentAttendanceDocId);
+        attRef.update({
+            [`records.${decodedText.trim()}`]: true
+        }).then(() => {
+            alert(`Đã điểm danh CÓ MẶT: ${decodedText}`);
+        }).catch(err => {
+            alert("Mã HS không thuộc lớp này hoặc có lỗi xảy ra!");
+        });
+    }
+
+    // ==========================================
+    // 6. CHỨC NĂNG PHỤ HUYNH (CMHS)
+    // ==========================================
+    async function setupParentDashboard() {
+        const today = new Date().toISOString().split('T')[0];
+        document.getElementById('today-date').innerText = new Date().toLocaleDateString('vi-VN');
+
+        // Lấy thông tin HS
+        const hsRef = db.collection('students').doc(currentUser.studentId);
+        const hsDoc = await hsRef.get();
+        const hsData = hsDoc.data();
+        
+        document.getElementById('p-student-name').innerText = hsData.name;
+        document.getElementById('p-student-class').innerText = hsData.class;
+
+        // Truy vấn các môn học trong ngày của Lớp này
+        const attRef = db.collection('attendance').where('date', '==', today).where('class', '==', hsData.class);
+        const snapshot = await attRef.get();
+        
+        const tbody = document.getElementById('parent-attendance-list');
+        tbody.innerHTML = '';
+        
+        if (snapshot.empty) {
+            tbody.innerHTML = '<tr><td colspan="2">Chưa có dữ liệu điểm danh môn nào hôm nay.</td></tr>';
             return;
         }
-        
-        // Thêm BOM để Excel đọc được tiếng Việt (UTF-8)
-        let csvContent = "\uFEFFSTT,Thông tin Học sinh,Thời gian quét\n";
-        
-        attendanceData.forEach((row, index) => {
-            // Escape dấu phẩy trong nội dung nếu có
-            const info = `"${row.info.replace(/"/g, '""')}"`;
-            csvContent += `${attendanceData.length - index},${info},${row.time}\n`;
+
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            const isPresent = data.records[currentUser.studentId];
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${data.subject}</td>
+                <td class="${isPresent ? 'status-present' : 'status-absent'}">
+                    ${isPresent ? 'Có mặt' : 'Vắng'}
+                </td>
+            `;
+            tbody.appendChild(tr);
         });
-
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement("a");
-        const url = URL.createObjectURL(blob);
-        link.setAttribute("href", url);
-        link.setAttribute("download", `DiemDanh_${new Date().toLocaleDateString('vi-VN').replace(/\//g, '-')}.csv`);
-        link.style.visibility = 'hidden';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
     }
 
-    // Xóa toàn bộ dữ liệu
-    function clearData() {
-        if (confirm("Bạn có chắc chắn muốn xóa toàn bộ dữ liệu điểm danh hiện tại? Hành động này không thể hoàn tác.")) {
-            attendanceData = [];
-            localStorage.removeItem('attendanceData');
-            renderTable();
-            alert("Đã xóa dữ liệu!");
+    async function changeParentPassword() {
+        const newPass = document.getElementById('new-cmhs-pass').value.trim();
+        if(newPass.length < 4) {
+            alert("Mật khẩu mới phải từ 4 ký tự trở lên!"); return;
         }
+        await db.collection('parents').doc(currentUser.id).update({ password: newPass });
+        alert("Cập nhật mật khẩu thành công!");
+        document.getElementById('new-cmhs-pass').value = '';
     }
-
-    // Chạy render bảng lần đầu khi mở app
-    renderTable();
 </script>
+
 </body>
 </html>
