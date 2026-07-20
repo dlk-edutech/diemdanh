@@ -21,7 +21,7 @@
         .form-group { margin-bottom: 15px; }
         label { display: block; font-weight: bold; margin-bottom: 5px; }
         input, select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-        button { width: 100%; padding: 10px; background: var(--primary); color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; margin-top: 10px; transition: opacity 0.2s; }
+        button { width: 100%; padding: 10px; background: var(--primary); color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; margin-top: 10px; transition: opacity 0.2s, background-color 0.2s; }
         button:hover { opacity: 0.9; }
         button:disabled { background: #9ca3af !important; cursor: not-allowed; }
         button.logout { background: #dc2626; }
@@ -32,7 +32,11 @@
         th { background: #f8fafc; }
         .status-present { color: #16a34a; font-weight: bold; }
         .status-absent { color: #dc2626; font-weight: bold; }
-        #qr-reader { width: 100%; max-width: 400px; margin: 0 auto; display: none; border-radius: 8px; overflow: hidden; }
+        
+        /* FIX LỖI IPHONE: Bổ sung min-height và background đen để giữ form */
+        #qr-reader { width: 100%; max-width: 400px; margin: 0 auto; display: none; border-radius: 8px; min-height: 250px; background: #000; overflow: hidden; position: relative;}
+        #qr-reader video { object-fit: cover; border-radius: 8px; }
+
         .nav-tabs { display: flex; gap: 10px; margin-bottom: 20px; }
         .nav-tabs button { background: #e5e7eb; color: var(--text); }
         .nav-tabs button.active-tab { background: var(--primary); color: white; }
@@ -503,24 +507,25 @@
     }
 
     // ==========================================
-    // 5. CHỨC NĂNG QUÉT QR - FIX LỖI HIỂN THỊ KHUNG HÌNH
+    // 5. CHỨC NĂNG QUÉT QR - FIX LỖI IPHONE
     // ==========================================
     function toggleScanner() {
         const qrBox = document.getElementById('qr-reader');
         const btn = document.getElementById('btn-toggle-scanner');
 
         if(isScannerRunning) {
-            // Đóng camera
+            // Tắt máy quét
             btn.innerText = "⏳ Đang tắt máy quét...";
             btn.disabled = true;
             html5QrCode.stop().then(() => {
+                html5QrCode.clear();
                 qrBox.style.display = 'none';
                 isScannerRunning = false;
                 btn.innerHTML = "📷 Bật Máy Quét QR";
                 btn.style.background = "#10b981";
                 btn.disabled = false;
             }).catch(err => {
-                // Xử lý lỗi nếu việc tắt camera gặp sự cố (vẫn reset UI)
+                // Xử lý an toàn nếu thư viện bị kẹt
                 qrBox.style.display = 'none';
                 isScannerRunning = false;
                 btn.innerHTML = "📷 Bật Máy Quét QR";
@@ -528,35 +533,38 @@
                 btn.disabled = false;
             });
         } else {
-            // Mở camera
+            // Bật máy quét
             btn.innerText = "⏳ Đang khởi động máy quét...";
             btn.disabled = true;
             
-            // BẮT BUỘC: Khung chứa phải được bật hiển thị (display block) TRƯỚC KHI gọi thư viện
-            // thì thư viện mới có thể tính toán được chiều rộng/cao của khung Camera.
+            // QUAN TRỌNG NHẤT: Trình duyệt phải hiển thị thẻ div TRƯỚC KHI gọi start()
+            // Nếu gọi lúc display:none, width và height sẽ bằng 0 => Đen thui.
             qrBox.style.display = 'block'; 
 
-            if (!html5QrCode) {
-                html5QrCode = new Html5Qrcode("qr-reader");
-            }
+            // Cấp một chút thời gian (150ms) để DOM thực sự bung ra trên iPhone
+            setTimeout(() => {
+                if (!html5QrCode) {
+                    html5QrCode = new Html5Qrcode("qr-reader");
+                }
 
-            // Gọi quét (bỏ các thông số constraint phức tạp để tương thích mọi dòng máy)
-            html5QrCode.start(
-                { facingMode: "environment" }, 
-                { fps: 15, qrbox: {width: 250, height: 250} },
-                onScanSuccess,
-                (errorMessage) => { /* Bỏ qua các cảnh báo không tìm thấy mã liên tục */ }
-            ).then(() => {
-                isScannerRunning = true;
-                btn.innerHTML = "❌ Tắt Máy Quét QR";
-                btn.style.background = "#ef4444";
-                btn.disabled = false;
-            }).catch((err) => {
-                alert("Lỗi camera: Vui lòng cấp quyền truy cập Camera cho trình duyệt hoặc thử lại!");
-                qrBox.style.display = 'none';
-                btn.innerHTML = "📷 Bật Máy Quét QR";
-                btn.disabled = false;
-            });
+                html5QrCode.start(
+                    { facingMode: "environment" }, 
+                    { fps: 15, qrbox: 250 }, // Dùng số nguyên thay vì đối tượng để tránh kén khung màn hình
+                    onScanSuccess,
+                    (errorMessage) => { /* Chặn các log rác báo không thấy mã */ }
+                ).then(() => {
+                    isScannerRunning = true;
+                    btn.innerHTML = "❌ Tắt Máy Quét QR";
+                    btn.style.background = "#ef4444";
+                    btn.disabled = false;
+                }).catch((err) => {
+                    alert("Lỗi camera: Trình duyệt bị từ chối quyền truy cập hoặc camera đang được ứng dụng khác sử dụng!");
+                    qrBox.style.display = 'none';
+                    btn.innerHTML = "📷 Bật Máy Quét QR";
+                    btn.style.background = "#10b981";
+                    btn.disabled = false;
+                });
+            }, 150);
         }
     }
 
