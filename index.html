@@ -38,6 +38,7 @@
         .excel-guide { background: #fdf2f8; padding: 10px; border-radius: 5px; font-size: 0.9em; margin-bottom: 10px; border: 1px dashed #f472b6; }
         .settings-section { margin-top: 30px; border-top: 1px solid #ccc; padding-top: 15px; background: #f9fafb; padding: 15px; border-radius: 8px;}
         .flex-row { display: flex; gap: 10px; align-items: center; }
+        .welcome-text { text-align: center; font-style: italic; color: #4b5563; margin-top: -10px; margin-bottom: 20px; }
     </style>
 </head>
 <body>
@@ -54,8 +55,8 @@
         </div>
         
         <div class="form-group">
-            <label id="lbl-username">Mã đăng nhập (Mã GV / Mã CMHS)</label>
-            <input type="text" id="username" placeholder="Nhập mã của bạn...">
+            <label id="lbl-username">Mã GV</label>
+            <input type="text" id="username" placeholder="Nhập mã đăng nhập...">
         </div>
         <button onclick="handleLogin()">Đăng Nhập</button>
     </div>
@@ -76,7 +77,7 @@
 
         <h3 style="margin-top: 30px;">2. Nạp danh sách Giáo Viên</h3>
         <div class="excel-guide">
-            <strong>Cấu trúc file (Bỏ qua dòng tiêu đề):</strong> Cột A: Mã GV | Cột B: Môn dạy (cách nhau dấu phẩy) | Cột C: Lớp dạy (cách nhau dấu phẩy)
+            <strong>Cấu trúc file (Bỏ qua dòng tiêu đề):</strong> Cột A: Mã GV | Cột B: Họ và tên | Cột C: Môn dạy | Cột D: Lớp dạy
         </div>
         <div class="flex-row">
             <input type="file" id="excel-teachers" accept=".xlsx, .xls" style="flex: 1;">
@@ -90,6 +91,8 @@
     <!-- MÀN HÌNH GIÁO VIÊN -->
     <div id="teacher-screen" class="screen">
         <h2>Điểm Danh Lớp Học</h2>
+        <div class="welcome-text">Xin chào, <span id="t-teacher-name" style="font-weight: bold; color: var(--primary);"></span></div>
+        
         <div class="form-group">
             <label>Chọn Lớp:</label>
             <select id="teacher-class"></select>
@@ -118,7 +121,7 @@
         </div>
 
         <div class="settings-section">
-            <h3>Đổi Mã Đăng Nhập (Cá Nhân)</h3>
+            <h3>Đổi Mã GV (Mã Đăng Nhập)</h3>
             <input type="text" id="new-gv-code" placeholder="Nhập mã đăng nhập mới...">
             <button class="action" style="margin-top: 10px;" onclick="changeLoginCode('teachers', 'new-gv-code')">Cập Nhật Mã Mới</button>
         </div>
@@ -147,7 +150,7 @@
         </table>
 
         <div class="settings-section">
-            <h3>Đổi Mã Đăng Nhập (Cá Nhân)</h3>
+            <h3>Đổi Mã CMHS (Mã Đăng Nhập)</h3>
             <input type="text" id="new-cmhs-code" placeholder="Nhập mã đăng nhập mới...">
             <button class="action" style="margin-top: 10px;" onclick="changeLoginCode('parents', 'new-cmhs-code')">Cập Nhật Mã Mới</button>
         </div>
@@ -190,8 +193,8 @@
         
         const lbl = document.getElementById('lbl-username');
         if(role === 'admin') lbl.innerText = 'Mã Quản Trị Viên';
-        else if (role === 'parent') lbl.innerText = 'Mã Đăng Nhập (Phụ Huynh)';
-        else lbl.innerText = 'Mã Đăng Nhập (Giáo Viên)';
+        else if (role === 'parent') lbl.innerText = 'Mã CMHS';
+        else lbl.innerText = 'Mã GV';
     }
 
     function showScreen(screenId) {
@@ -217,7 +220,7 @@
                 setupTeacherDashboard();
                 showScreen('teacher-screen');
             } else {
-                alert("Mã đăng nhập không tồn tại!");
+                alert("Mã GV không tồn tại!");
             }
         }
         else if (currentRole === 'parent') {
@@ -227,7 +230,7 @@
                 setupParentDashboard();
                 showScreen('parent-screen');
             } else {
-                alert("Mã đăng nhập không tồn tại!");
+                alert("Mã CMHS không tồn tại!");
             }
         }
     }
@@ -256,15 +259,13 @@
         }
         await db.collection(collectionName).doc(currentUser.id).update({ loginCode: newCode });
         currentUser.loginCode = newCode;
-        alert("Đổi mã đăng nhập thành công! Từ lần sau hãy dùng mã này để vào hệ thống.");
+        alert("Đổi mã thành công! Từ lần sau hãy dùng mã này để vào hệ thống.");
         document.getElementById(inputId).value = '';
     }
 
     // ==========================================
     // 3. CHỨC NĂNG ADMIN NẠP FILE & TẢI FILE MẪU
     // ==========================================
-
-    // Tính năng Tải File Mẫu
     function downloadStudentSample() {
         const data = [
             ["Mã HS", "Lớp", "Họ Tên", "Mã CMHS"],
@@ -274,22 +275,21 @@
         const ws = XLSX.utils.aoa_to_sheet(data);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "DanhSachHocSinh");
-        XLSX.writeFile(wb, "Mau_DanhSachHocSinh_THPTTranPhu.xlsx");
+        XLSX.writeFile(wb, "Mau_DanhSachHocSinh.xlsx");
     }
 
     function downloadTeacherSample() {
         const data = [
-            ["Mã GV", "Môn dạy", "Lớp dạy"],
-            ["GVToan01", "Toán, Tin Học", "10A1, 10A2, 11A1"],
-            ["GVLy02", "Vật Lý", "10A1, 11A1"]
+            ["Mã GV", "Họ và tên", "Môn dạy", "Lớp dạy"],
+            ["GVToan01", "Nguyễn Văn Toán", "Toán, Tin Học", "10A1, 10A2, 11A1"],
+            ["GVLy02", "Trần Thị Lý", "Vật Lý", "10A1, 11A1"]
         ];
         const ws = XLSX.utils.aoa_to_sheet(data);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "DanhSachGiaoVien");
-        XLSX.writeFile(wb, "Mau_DanhSachGiaoVien_THPTTranPhu.xlsx");
+        XLSX.writeFile(wb, "Mau_DanhSachGiaoVien.xlsx");
     }
 
-    // Tính năng Đọc file Excel tải lên
     function parseExcel(file, callback) {
         if(!file) { alert("Vui lòng chọn file Excel!"); return; }
         const reader = new FileReader();
@@ -335,15 +335,17 @@
             let count = 0;
             rows.forEach(row => {
                 const maGV = row[0] ? String(row[0]).trim() : '';
-                const monStr = row[1] ? String(row[1]).trim() : '';
-                const lopStr = row[2] ? String(row[2]).trim() : '';
+                const tenGV = row[1] ? String(row[1]).trim() : '';
+                const monStr = row[2] ? String(row[2]).trim() : '';
+                const lopStr = row[3] ? String(row[3]).trim() : '';
 
                 if(maGV) {
                     const mon = monStr.split(',').map(s=>s.trim()).filter(s=>s);
                     const lop = lopStr.split(',').map(s=>s.trim()).filter(s=>s);
                     
                     const gvRef = db.collection('teachers').doc(maGV);
-                    batch.set(gvRef, { id: maGV, loginCode: maGV, subjects: mon, classes: lop });
+                    // Bổ sung thuộc tính name (Họ và tên)
+                    batch.set(gvRef, { id: maGV, loginCode: maGV, name: tenGV, subjects: mon, classes: lop });
                     count++;
                 }
             });
@@ -356,6 +358,9 @@
     // 4. CHỨC NĂNG GIÁO VIÊN
     // ==========================================
     function setupTeacherDashboard() {
+        // Cập nhật lời chào hiển thị Họ và tên GV
+        document.getElementById('t-teacher-name').innerText = currentUser.name || currentUser.id;
+
         const classSelect = document.getElementById('teacher-class');
         const subjectSelect = document.getElementById('teacher-subject');
         classSelect.innerHTML = ''; subjectSelect.innerHTML = '';
