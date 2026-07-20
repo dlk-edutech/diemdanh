@@ -21,7 +21,7 @@
         .form-group { margin-bottom: 15px; }
         label { display: block; font-weight: bold; margin-bottom: 5px; }
         input, select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-        button { width: 100%; padding: 10px; background: var(--primary); color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; margin-top: 10px; transition: opacity 0.2s, background-color 0.2s; }
+        button { width: 100%; padding: 10px; background: var(--primary); color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; margin-top: 10px; transition: opacity 0.2s; }
         button:hover { opacity: 0.9; }
         button:disabled { background: #9ca3af !important; cursor: not-allowed; }
         button.logout { background: #dc2626; }
@@ -134,7 +134,6 @@
         <button onclick="loadAttendanceList()">Mở Danh Sách Điểm Danh</button>
         
         <div id="attendance-section" style="display: none; margin-top: 20px;">
-            <!-- Nút bấm quét QR được trang bị ID để javascript dễ điều khiển -->
             <button id="btn-toggle-scanner" class="action" style="background: #10b981; margin-bottom:15px; width: 100%;" onclick="toggleScanner()">📷 Bật Máy Quét QR</button>
             
             <div id="scan-toast">✅ Đã điểm danh thành công</div>
@@ -205,7 +204,7 @@
 
     let currentRole = 'teacher';
     let currentUser = null;
-    let html5QrCode = null; // Đổi biến để dùng Core API
+    let html5QrCode = null;
     let isScannerRunning = false;
     let currentAttendanceDocId = null;
     let unsubscribeSnapshot = null;
@@ -217,16 +216,20 @@
     // ÂM THANH & THÔNG BÁO
     // ==========================================
     function playBeep() {
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        const gainNode = audioCtx.createGain();
-        gainNode.gain.setValueAtTime(2.0, audioCtx.currentTime); 
-        gainNode.connect(audioCtx.destination);
-        const oscillator = audioCtx.createOscillator();
-        oscillator.type = 'square'; 
-        oscillator.frequency.setValueAtTime(900, audioCtx.currentTime); 
-        oscillator.connect(gainNode);
-        oscillator.start();
-        setTimeout(() => oscillator.stop(), 100); 
+        try {
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const gainNode = audioCtx.createGain();
+            gainNode.gain.setValueAtTime(2.0, audioCtx.currentTime); 
+            gainNode.connect(audioCtx.destination);
+            const oscillator = audioCtx.createOscillator();
+            oscillator.type = 'square'; 
+            oscillator.frequency.setValueAtTime(900, audioCtx.currentTime); 
+            oscillator.connect(gainNode);
+            oscillator.start();
+            setTimeout(() => oscillator.stop(), 100); 
+        } catch (e) {
+            console.log("Audio not supported or blocked", e);
+        }
     }
 
     function showToast(message, isWarning = false) {
@@ -288,7 +291,6 @@
     }
 
     function logout() {
-        // Tắt camera ngầm nếu đang chạy
         if(isScannerRunning && html5QrCode) {
             html5QrCode.stop().then(() => {
                 html5QrCode.clear();
@@ -501,7 +503,7 @@
     }
 
     // ==========================================
-    // 5. CHỨC NĂNG QUÉT QR ĐƯỢC TỐI ƯU UX
+    // 5. CHỨC NĂNG QUÉT QR - FIX LỖI HIỂN THỊ KHUNG HÌNH
     // ==========================================
     function toggleScanner() {
         const qrBox = document.getElementById('qr-reader');
@@ -518,34 +520,40 @@
                 btn.style.background = "#10b981";
                 btn.disabled = false;
             }).catch(err => {
-                console.error("Lỗi khi tắt", err);
+                // Xử lý lỗi nếu việc tắt camera gặp sự cố (vẫn reset UI)
+                qrBox.style.display = 'none';
+                isScannerRunning = false;
+                btn.innerHTML = "📷 Bật Máy Quét QR";
+                btn.style.background = "#10b981";
                 btn.disabled = false;
             });
         } else {
-            // Khởi động camera ngầm, khi nào hoàn tất mới show ra
+            // Mở camera
             btn.innerText = "⏳ Đang khởi động máy quét...";
             btn.disabled = true;
+            
+            // BẮT BUỘC: Khung chứa phải được bật hiển thị (display block) TRƯỚC KHI gọi thư viện
+            // thì thư viện mới có thể tính toán được chiều rộng/cao của khung Camera.
+            qrBox.style.display = 'block'; 
 
             if (!html5QrCode) {
                 html5QrCode = new Html5Qrcode("qr-reader");
             }
 
+            // Gọi quét (bỏ các thông số constraint phức tạp để tương thích mọi dòng máy)
             html5QrCode.start(
                 { facingMode: "environment" }, 
-                { 
-                    fps: 15, 
-                    qrbox: {width: 250, height: 250}, 
-                    videoConstraints: { advanced: [{ focusMode: "continuous" }] }
-                },
-                onScanSuccess
+                { fps: 15, qrbox: {width: 250, height: 250} },
+                onScanSuccess,
+                (errorMessage) => { /* Bỏ qua các cảnh báo không tìm thấy mã liên tục */ }
             ).then(() => {
-                qrBox.style.display = 'block'; // CHỈ HIỆN KHI ĐÃ SẴN SÀNG 100%
                 isScannerRunning = true;
                 btn.innerHTML = "❌ Tắt Máy Quét QR";
                 btn.style.background = "#ef4444";
                 btn.disabled = false;
             }).catch((err) => {
-                alert("Lỗi: Không thể khởi động camera. Vui lòng cấp quyền truy cập thiết bị!");
+                alert("Lỗi camera: Vui lòng cấp quyền truy cập Camera cho trình duyệt hoặc thử lại!");
+                qrBox.style.display = 'none';
                 btn.innerHTML = "📷 Bật Máy Quét QR";
                 btn.disabled = false;
             });
