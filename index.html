@@ -177,7 +177,6 @@
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
 
-    // Biến toàn cục
     let currentRole = 'teacher';
     let currentUser = null;
     let html5QrcodeScanner = null;
@@ -215,23 +214,31 @@
             }
         } 
         else if (currentRole === 'teacher') {
-            const snapshot = await db.collection("teachers").where("loginCode", "==", loginCode).get();
-            if (!snapshot.empty) {
-                currentUser = snapshot.docs[0].data();
-                setupTeacherDashboard();
-                showScreen('teacher-screen');
-            } else {
-                alert("Mã GV không tồn tại!");
+            try {
+                const snapshot = await db.collection("teachers").where("loginCode", "==", loginCode).get();
+                if (!snapshot.empty) {
+                    currentUser = snapshot.docs[0].data();
+                    setupTeacherDashboard();
+                    showScreen('teacher-screen');
+                } else {
+                    alert("Mã GV không tồn tại!");
+                }
+            } catch (err) {
+                alert("Lỗi kết nối máy chủ: Vui lòng kiểm tra đã bật Firestore Database chưa!");
             }
         }
         else if (currentRole === 'parent') {
-            const snapshot = await db.collection("parents").where("loginCode", "==", loginCode).get();
-            if (!snapshot.empty) {
-                currentUser = snapshot.docs[0].data();
-                setupParentDashboard();
-                showScreen('parent-screen');
-            } else {
-                alert("Mã CMHS không tồn tại!");
+            try {
+                const snapshot = await db.collection("parents").where("loginCode", "==", loginCode).get();
+                if (!snapshot.empty) {
+                    currentUser = snapshot.docs[0].data();
+                    setupParentDashboard();
+                    showScreen('parent-screen');
+                } else {
+                    alert("Mã CMHS không tồn tại!");
+                }
+            } catch (err) {
+                alert("Lỗi kết nối máy chủ: Vui lòng kiểm tra đã bật Firestore Database chưa!");
             }
         }
     }
@@ -265,7 +272,7 @@
     }
 
     // ==========================================
-    // 3. CHỨC NĂNG ADMIN NẠP FILE & TẢI FILE MẪU
+    // 3. CHỨC NĂNG ADMIN NẠP FILE (CÓ CHỐNG TREO)
     // ==========================================
     function downloadStudentSample() {
         const data = [
@@ -291,15 +298,26 @@
         XLSX.writeFile(wb, "Mau_DanhSachGiaoVien.xlsx");
     }
 
-    function parseExcel(file, callback) {
+    // Hàm đọc Excel an toàn
+    function parseExcel(file, onSuccess, onError) {
         if(!file) { alert("Vui lòng chọn file Excel!"); return; }
         const reader = new FileReader();
         reader.onload = function(e) {
-            const data = new Uint8Array(e.target.result);
-            const workbook = XLSX.read(data, {type: 'array'});
-            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-            const rows = XLSX.utils.sheet_to_json(firstSheet, {header: 1});
-            callback(rows.slice(1)); 
+            try {
+                if (typeof XLSX === 'undefined') {
+                    throw new Error("Không thể tải thư viện giải mã Excel. Vui lòng kiểm tra kết nối mạng!");
+                }
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, {type: 'array'});
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                const rows = XLSX.utils.sheet_to_json(firstSheet, {header: 1});
+                onSuccess(rows.slice(1)); 
+            } catch (err) {
+                onError(err);
+            }
+        };
+        reader.onerror = function() {
+            onError(new Error("Lỗi trình duyệt khi cố gắng đọc file."));
         };
         reader.readAsArrayBuffer(file);
     }
@@ -333,10 +351,9 @@
                         const parentRef = db.collection('parents').doc(maCMHS);
                         currentBatch.set(parentRef, { id: maCMHS, loginCode: maCMHS, studentId: maHS }, {merge: true});
                         opCount++;
-
                         count++;
 
-                        // Tự động ngắt mẻ dữ liệu khi đạt 400 lệnh (Giới hạn của Firebase là 500)
+                        // Gói từng 400 lệnh để không bị quá tải
                         if (opCount >= 400) {
                             batches.push(currentBatch.commit());
                             currentBatch = db.batch();
@@ -345,20 +362,37 @@
                     }
                 });
 
-                // Đẩy mẻ dữ liệu cuối cùng (nếu còn dư)
                 if (opCount > 0) {
                     batches.push(currentBatch.commit());
                 }
 
-                await Promise.all(batches); // Chờ tất cả đẩy xong
+                if(count === 0) {
+                    alert("Không tìm thấy dữ liệu hợp lệ. Vui lòng kiểm tra lại cấu trúc 4 cột trong file Excel.");
+                    btnElement.innerText = originalText;
+                    btnElement.disabled = false;
+                    return;
+                }
+
+                // CƠ CHẾ CHỐNG TREO: Tự động ngắt và báo lỗi nếu Firebase mất quá 15 giây để phản hồi
+                const timeout = new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error("Quá thời gian chờ. Khả năng cao chưa bấm 'Create Database' trong mục Firestore Database.")), 15000)
+                );
+                
+                await Promise.race([Promise.all(batches), timeout]);
+                
                 alert(`✅ Đã nạp thành công ${count} học sinh!`);
             } catch (error) {
                 console.error(error);
-                alert("❌ Có lỗi xảy ra. Kiểm tra lại Quyền truy cập (Rules) của Firestore Database.\nChi tiết lỗi: " + error.message);
+                alert("❌ Nạp thất bại: " + error.message);
             } finally {
                 btnElement.innerText = originalText;
                 btnElement.disabled = false;
+                document.getElementById('excel-students').value = ''; 
             }
+        }, (error) => {
+            alert("❌ Lỗi xử lý file: " + error.message);
+            btnElement.innerText = originalText;
+            btnElement.disabled = false;
         });
     }
 
@@ -404,15 +438,32 @@
                     batches.push(currentBatch.commit());
                 }
 
-                await Promise.all(batches);
+                if(count === 0) {
+                    alert("Không tìm thấy dữ liệu hợp lệ trong file Excel.");
+                    btnElement.innerText = originalText;
+                    btnElement.disabled = false;
+                    return;
+                }
+
+                const timeout = new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error("Quá thời gian chờ. Khả năng cao chưa bật Firestore Database.")), 15000)
+                );
+                
+                await Promise.race([Promise.all(batches), timeout]);
+
                 alert(`✅ Đã nạp thành công ${count} giáo viên!`);
             } catch (error) {
                 console.error(error);
-                alert("❌ Có lỗi xảy ra. Kiểm tra lại Quyền truy cập (Rules) của Firestore Database.\nChi tiết lỗi: " + error.message);
+                alert("❌ Nạp thất bại: " + error.message);
             } finally {
                 btnElement.innerText = originalText;
                 btnElement.disabled = false;
+                document.getElementById('excel-teachers').value = '';
             }
+        }, (error) => {
+            alert("❌ Lỗi xử lý file: " + error.message);
+            btnElement.innerText = originalText;
+            btnElement.disabled = false;
         });
     }
 
