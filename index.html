@@ -130,6 +130,8 @@
         .status-present::before { content: '●'; font-size: 1.2em; }
         .status-absent { color: var(--danger); font-weight: 600; display: flex; align-items: center; gap: 4px;}
         .status-absent::before { content: '●'; font-size: 1.2em; }
+        .status-pending { color: var(--text-muted); font-style: italic; display: flex; align-items: center; gap: 4px; }
+        .status-pending::before { content: '○'; font-size: 1.2em; }
 
         #qr-reader { 
             width: 100%; 
@@ -659,13 +661,22 @@
             snapshot.forEach(doc => studentsList.push(doc.data()));
             studentsList.sort((a, b) => a.id.localeCompare(b.id));
 
-            // Chỉ lắng nghe doc Điểm danh (Không tự động khởi tạo nếu chưa có)
+            // Chỉ lắng nghe doc Điểm danh
             const attRef = db.collection('attendance').doc(currentAttendanceDocId);
             
             if(unsubscribeSnapshot) unsubscribeSnapshot();
             unsubscribeSnapshot = attRef.onSnapshot(doc => {
-                // Nếu doc chưa tồn tại (chưa quét ai), coi như tất cả mảng ghi nhận là rỗng
                 const data = doc.exists ? (doc.data().records || {}) : {};
+                
+                // KIỂM TRA XEM ĐÃ CÓ AI CÓ MẶT CHƯA
+                let hasAnyAttendance = false;
+                for (const key in data) {
+                    if (Array.isArray(data[key]) && data[key].length > 0) {
+                        hasAnyAttendance = true;
+                        break;
+                    }
+                }
+
                 const tbody = document.getElementById('student-list');
                 const fragment = document.createDocumentFragment();
                 
@@ -679,17 +690,25 @@
                         timeBadges = studentRecords.map(r => `<span class="time-badge">${r.time}</span>`).join('');
                     }
 
+                    // TÙY CHỈNH HIỂN THỊ DỰA VÀO TRẠNG THÁI CHUNG CỦA LỚP
+                    let statusHtml = '';
+                    if (hasAnyAttendance) {
+                        statusHtml = `
+                            <div class="${isPresent ? 'status-present' : 'status-absent'}">${isPresent ? 'Có mặt' : 'Vắng'}</div>
+                            <div>${timeBadges}</div>
+                        `;
+                    } else {
+                        statusHtml = `<div class="status-pending">Chưa điểm danh</div>`;
+                    }
+
                     const tr = document.createElement('tr');
                     tr.innerHTML = `
                         <td><strong>${hs.id}</strong></td>
                         <td>${hs.name}</td>
-                        <td>
-                            <div class="${isPresent ? 'status-present' : 'status-absent'}">${isPresent ? 'Có mặt' : 'Vắng'}</div>
-                            <div>${timeBadges}</div>
-                        </td>
+                        <td>${statusHtml}</td>
                         <td>
                             <button class="action ${isPresent ? 'secondary' : ''}" style="padding: 6px 12px; font-size: 0.85rem; width: 100%; margin: 0;" onclick="manualUpdateStatus('${hs.id}', ${!isPresent})">
-                                Đổi thành ${isPresent ? 'Vắng' : 'Có mặt'}
+                                ${isPresent ? 'Đổi thành Vắng' : 'Đánh dấu Có mặt'}
                             </button>
                         </td>
                     `;
@@ -852,7 +871,7 @@
             
             // NẾU CHỌN NHẦM LỚP (Quét 1 em không thuộc lớp đang chọn) -> CHẶN KHỞI TẠO!
             if (!studentExistsInClass) {
-                showToast(`❌ [${studentId}] Học sinh KHÔNG thuộc lớp ${selectedClass}! Đã chặn tạo dữ liệu rác.`, true);
+                showToast(`❌ [${studentId}] Học sinh KHÔNG thuộc lớp ${selectedClass}! Đã chặn tạo dữ liệu.`, true);
                 return;
             }
             
@@ -926,15 +945,28 @@
         });
 
         attendanceList.forEach(data => {
+            let classHasAnyPresent = false;
+            for (const key in data.records) {
+                if (Array.isArray(data.records[key]) && data.records[key].length > 0) {
+                    classHasAnyPresent = true;
+                    break;
+                }
+            }
+
             let studentRecords = data.records[currentUser.studentId] || [];
             if(typeof studentRecords === 'boolean') studentRecords = studentRecords ? [{time: 'N/A', ts: 0}] : [];
             
             let statusHtml = '';
-            if(studentRecords.length > 0) {
-                const timeBadges = studentRecords.map(r => `<span class="time-badge">${r.time}</span>`).join('');
-                statusHtml = `<div class="status-present">Có mặt</div><div>${timeBadges}</div>`;
+            
+            if (classHasAnyPresent) {
+                if(studentRecords.length > 0) {
+                    const timeBadges = studentRecords.map(r => `<span class="time-badge">${r.time}</span>`).join('');
+                    statusHtml = `<div class="status-present">Có mặt</div><div>${timeBadges}</div>`;
+                } else {
+                    statusHtml = `<div class="status-absent">Vắng</div>`;
+                }
             } else {
-                statusHtml = `<div class="status-absent">Vắng</div>`;
+                statusHtml = `<div class="status-pending">Chưa điểm danh</div>`;
             }
 
             const periodText = data.period ? ` (Tiết ${data.period} - Ca ${data.shift || 'Sáng'})` : '';
