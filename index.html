@@ -2,7 +2,7 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Hệ Thống Điểm Danh Trực Tuyến</title>
     <!-- Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -74,7 +74,7 @@
         .screen { display: none; }
         .active { display: block; animation: fadeIn 0.3s ease-out; }
 
-        .form-group { margin-bottom: 18px; }
+        .form-group { margin-bottom: 18px; width: 100%; }
         label { display: block; font-weight: 500; margin-bottom: 6px; color: var(--text-main); font-size: 0.95rem; }
         input, select { 
             width: 100%; 
@@ -119,9 +119,10 @@
         button.secondary { background: var(--secondary); }
         button.secondary:hover { background: #475569; }
 
-        table { width: 100%; border-collapse: collapse; margin-top: 15px; border-radius: var(--radius-md); overflow: hidden; box-shadow: var(--shadow-sm); }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; border-radius: var(--radius-md); overflow: hidden; box-shadow: var(--shadow-sm); min-width: 500px; }
+        .table-responsive { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
         th, td { border-bottom: 1px solid var(--border-color); padding: 12px 15px; text-align: left; font-size: 0.95rem; }
-        th { background: #f8fafc; font-weight: 600; color: var(--text-muted); text-transform: uppercase; font-size: 0.85rem; letter-spacing: 0.05em; }
+        th { background: #f8fafc; font-weight: 600; color: var(--text-muted); text-transform: uppercase; font-size: 0.85rem; letter-spacing: 0.05em; white-space: nowrap; }
         tr:last-child td { border-bottom: none; }
         tr:hover td { background-color: #f8fafc; }
 
@@ -145,7 +146,7 @@
         #qr-reader video { object-fit: cover; border-radius: var(--radius-lg); }
 
         .nav-tabs { display: flex; gap: 8px; margin-bottom: 25px; background: #f1f5f9; padding: 6px; border-radius: var(--radius-md); }
-        .nav-tabs button { background: transparent; color: var(--text-muted); margin: 0; padding: 10px; font-weight: 600; }
+        .nav-tabs button { flex: 1; background: transparent; color: var(--text-muted); margin: 0; padding: 10px; font-weight: 600; font-size: 0.95rem; }
         .nav-tabs button:hover { background: rgba(0,0,0,0.05); transform: none; }
         .nav-tabs button.active-tab { background: var(--card-bg); color: var(--primary); box-shadow: var(--shadow-sm); }
 
@@ -162,11 +163,38 @@
             border-radius: var(--radius-md); text-align: center; font-weight: 600; 
             margin-bottom: 20px; font-size: 1.05rem; box-shadow: var(--shadow-md);
             animation: slideDown 0.3s ease-out;
+            position: sticky; top: 10px; z-index: 1000;
         }
         @keyframes slideDown { from { transform: translateY(-10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
         .time-badge { background: #dcfce7; color: #166534; padding: 3px 8px; border-radius: 99px; font-size: 0.85rem; margin-right: 5px; display: inline-block; margin-top: 6px; font-weight: 500; }
-        .auto-shift { background: #f8fafc; border: 1px solid var(--border-color); padding: 12px; border-radius: var(--radius-md); font-weight: 600; color: var(--primary); text-align: center; }
+        .auto-shift { background: #f8fafc; border: 1px solid var(--border-color); padding: 12px; border-radius: var(--radius-md); font-weight: 600; color: var(--primary); text-align: center; height: 100%; box-sizing: border-box; display: flex; align-items: center; justify-content: center; }
+
+        /* TỐI ƯU HÓA HIỂN THỊ DI ĐỘNG (RESPONSIVE) */
+        @media (max-width: 600px) {
+            body { padding: 10px 5px; }
+            .container { padding: 20px 15px; margin: 0 5px; border-radius: var(--radius-md); }
+            
+            h1 { font-size: 1.4rem; margin-bottom: 20px; }
+            h2 { font-size: 1.2rem; }
+            h3 { font-size: 1rem; }
+            
+            .nav-tabs { flex-wrap: wrap; }
+            .nav-tabs button { font-size: 0.85rem; padding: 8px 4px; }
+            
+            .flex-row { flex-direction: column; gap: 15px; align-items: stretch; }
+            .flex-row > * { min-width: 100%; width: 100%; margin-bottom: 0 !important; }
+            
+            .flex-bottom { flex-direction: column; gap: 12px; }
+            .flex-bottom button { width: 100%; margin: 0; }
+            
+            th, td { padding: 10px 8px; font-size: 0.85rem; }
+            
+            .excel-guide { font-size: 0.85rem; padding: 12px; }
+            .welcome-text { font-size: 1rem; margin-bottom: 20px; }
+            
+            .auto-shift { padding: 10px; }
+        }
 
         /* Footer Copyright */
         .footer-copyright {
@@ -175,8 +203,9 @@
             color: var(--text-muted);
             font-size: 0.85rem;
             margin-top: auto;
+            line-height: 1.5;
         }
-        .footer-copyright strong { color: var(--text-main); }
+        .footer-copyright strong { color: var(--text-main); font-size: 0.95rem; }
     </style>
 </head>
 <body>
@@ -216,7 +245,7 @@
                 <div class="form-group" style="margin:0; flex: 2;">
                     <input type="file" id="excel-students" accept=".xlsx, .xls">
                 </div>
-                <button class="action secondary" onclick="downloadStudentSample()" style="margin: 0; flex: 1;">📥 Mẫu</button>
+                <button class="action secondary" onclick="downloadStudentSample()" style="margin: 0; flex: 1;">📥 Tải Mẫu</button>
             </div>
             <button class="action" style="width: 100%; margin-top: 15px;" onclick="importStudentsFromExcel(this)">Nạp Danh Sách Học Sinh</button>
 
@@ -229,7 +258,7 @@
                 <div class="form-group" style="margin:0; flex: 2;">
                     <input type="file" id="excel-teachers" accept=".xlsx, .xls">
                 </div>
-                <button class="action secondary" onclick="downloadTeacherSample()" style="margin: 0; flex: 1;">📥 Mẫu</button>
+                <button class="action secondary" onclick="downloadTeacherSample()" style="margin: 0; flex: 1;">📥 Tải Mẫu</button>
             </div>
             <button class="action" style="width: 100%; margin-top: 15px;" onclick="importTeachersFromExcel(this)">Nạp Danh Sách Giáo Viên</button>
 
@@ -243,7 +272,7 @@
             <h2>Điểm Danh Lớp Học</h2>
             <div class="welcome-text">Xin chào, <span id="t-teacher-name" style="font-weight: 700; color: var(--primary);"></span></div>
             
-            <div class="flex-row" style="margin-bottom: 5px;">
+            <div class="flex-row" style="margin-bottom: 15px;">
                 <div class="form-group">
                     <label>Chọn Lớp:</label>
                     <select id="teacher-class"></select>
@@ -281,14 +310,14 @@
                 <div id="scan-toast">✅ Đã điểm danh thành công</div>
                 <div id="qr-reader"></div>
 
-                <div style="overflow-x: auto;">
+                <div class="table-responsive">
                     <table>
                         <thead>
                             <tr>
                                 <th>Mã HS</th>
                                 <th>Họ Tên</th>
                                 <th>Trạng thái & Thời gian</th>
-                                <th style="width: 140px;">Thao tác</th>
+                                <th style="width: 120px;">Thao tác</th>
                             </tr>
                         </thead>
                         <tbody id="student-list"></tbody>
@@ -297,7 +326,7 @@
             </div>
 
             <div class="flex-bottom">
-                <button class="action secondary" onclick="promptChangeLoginCode('teachers')">🔑 Đổi Mã</button>
+                <button class="action secondary" onclick="promptChangeLoginCode('teachers')">🔑 Đổi Mã Đăng Nhập</button>
                 <button class="logout" onclick="logout()">Đăng Xuất</button>
             </div>
         </div>
@@ -312,7 +341,7 @@
             </div>
 
             <h3>Tình trạng hôm nay (<span id="today-date" style="color:var(--primary);"></span>)</h3>
-            <div style="overflow-x: auto;">
+            <div class="table-responsive">
                 <table>
                     <thead>
                         <tr>
@@ -325,7 +354,7 @@
             </div>
 
             <div class="flex-bottom">
-                <button class="action secondary" onclick="promptChangeLoginCode('parents')">🔑 Đổi Mã</button>
+                <button class="action secondary" onclick="promptChangeLoginCode('parents')">🔑 Đổi Mã Đăng Nhập</button>
                 <button class="logout" onclick="logout()">Đăng Xuất</button>
             </div>
         </div>
@@ -388,7 +417,7 @@
     function showToast(message, isWarning = false) {
         const toast = document.getElementById('scan-toast');
         toast.innerText = message;
-        toast.style.background = isWarning ? '#f59e0b' : '#10b981';
+        toast.style.background = isWarning ? 'var(--danger)' : 'var(--success)';
         toast.style.display = 'block';
         if(toastTimeout) clearTimeout(toastTimeout);
         toastTimeout = setTimeout(() => { toast.style.display = 'none'; }, 3000);
@@ -608,7 +637,6 @@
             const data = doc.data().records || {};
             const tbody = document.getElementById('student-list');
             
-            // Tối ưu hóa render DOM với DocumentFragment để tăng tốc
             const fragment = document.createDocumentFragment();
             
             studentsList.forEach(hs => {
@@ -630,7 +658,7 @@
                         <div>${timeBadges}</div>
                     </td>
                     <td>
-                        <button class="action ${isPresent ? 'secondary' : ''}" style="padding: 6px 12px; font-size: 0.85rem;" onclick="manualUpdateStatus('${hs.id}', ${!isPresent})">
+                        <button class="action ${isPresent ? 'secondary' : ''}" style="padding: 6px 12px; font-size: 0.85rem; width: 100%; margin: 0;" onclick="manualUpdateStatus('${hs.id}', ${!isPresent})">
                             Đổi thành ${isPresent ? 'Vắng' : 'Có mặt'}
                         </button>
                     </td>
@@ -737,7 +765,7 @@
                 const diffMinutes = (nowMs - lastRecord.ts) / (1000 * 60);
                 
                 if (diffMinutes < 30) {
-                    showToast(`⚠️ [${studentId}] Đã quét trước đó (cách đây ${Math.floor(diffMinutes)} phút)`, true);
+                    showToast(`⚠️ [${studentId}] Đã quét (cách đây ${Math.floor(diffMinutes)} phút)`, true);
                     return;
                 }
             }
