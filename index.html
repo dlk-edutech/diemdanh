@@ -272,6 +272,7 @@
             <h2>Điểm Danh Lớp Học</h2>
             <div class="welcome-text">Xin chào, <span id="t-teacher-name" style="font-weight: 700; color: var(--primary);"></span></div>
             
+            <!-- Phần chọn Lớp, Môn, Tiết -->
             <div class="flex-row" style="margin-bottom: 15px;">
                 <div class="form-group">
                     <label>Chọn Lớp:</label>
@@ -283,7 +284,7 @@
                 </div>
             </div>
             
-            <div class="flex-row" style="margin-bottom: 20px;">
+            <div class="flex-row" style="margin-bottom: 25px;">
                 <div class="form-group">
                     <label>Ca học (Tự động):</label>
                     <div id="teacher-shift" class="auto-shift">Đang lấy giờ...</div>
@@ -300,16 +301,18 @@
                 </div>
             </div>
 
-            <button onclick="loadAttendanceList()">Mở Danh Sách Điểm Danh</button>
+            <!-- HAI NÚT HOẠT ĐỘNG ĐỘC LẬP -->
+            <div class="flex-row" style="margin-bottom: 25px; gap: 12px;">
+                <button class="action secondary" onclick="loadAttendanceList()" style="margin: 0;">📋 Mở Danh Sách</button>
+                <button id="btn-toggle-scanner" class="action" onclick="toggleScanner()" style="margin: 0;">📷 Bật Máy Quét</button>
+            </div>
             
-            <div id="attendance-section" style="display: none; margin-top: 30px;">
-                <button id="btn-toggle-scanner" class="action" style="width: 100%; margin-bottom:20px;" onclick="toggleScanner()">
-                    📷 Bật Máy Quét QR
-                </button>
-                
-                <div id="scan-toast">✅ Đã điểm danh thành công</div>
-                <div id="qr-reader"></div>
+            <!-- Khu vực Quét QR (Độc lập) -->
+            <div id="scan-toast">✅ Đã điểm danh thành công</div>
+            <div id="qr-reader"></div>
 
+            <!-- Khu vực Danh Sách Điểm Danh (Độc lập) -->
+            <div id="attendance-list-container" style="display: none;">
                 <div class="table-responsive">
                     <table>
                         <thead>
@@ -481,7 +484,7 @@
             isScannerRunning = false;
             const btn = document.getElementById('btn-toggle-scanner');
             if(btn) {
-                btn.innerHTML = '📷 Bật Máy Quét QR';
+                btn.innerHTML = '📷 Bật Máy Quét';
                 btn.style.background = 'var(--success)';
             }
         }
@@ -489,6 +492,10 @@
         if(unsubscribeSnapshot) unsubscribeSnapshot();
         currentUser = null;
         document.getElementById('username').value = '';
+        
+        // Reset giao diện GV
+        document.getElementById('attendance-list-container').style.display = 'none';
+        
         showScreen('login-screen');
     }
 
@@ -606,32 +613,50 @@
         
         if(currentUser.classes) currentUser.classes.forEach(c => classSelect.add(new Option(c, c)));
         if(currentUser.subjects) currentUser.subjects.forEach(s => subjectSelect.add(new Option(s, s)));
-        document.getElementById('attendance-section').style.display = 'none';
     }
 
-    async function loadAttendanceList() {
-        document.getElementById('attendance-section').style.display = 'block';
+    // HÀM DÙNG CHUNG: Đảm bảo CSDL đã có document điểm danh của Tiết/Lớp hiện tại
+    async function ensureAttendanceDocReady() {
         const selectedClass = document.getElementById('teacher-class').value;
         const selectedSubject = document.getElementById('teacher-subject').value;
         const selectedPeriod = document.getElementById('teacher-period').value; 
         const today = new Date().toISOString().split('T')[0];
         
-        currentAttendanceDocId = `${today}_${selectedClass}_${selectedSubject}_${autoDetectedShift}_T${selectedPeriod}`;
+        const docId = `${today}_${selectedClass}_${selectedSubject}_${autoDetectedShift}_T${selectedPeriod}`;
+        currentAttendanceDocId = docId; // Lưu biến toàn cục
         
+        const attRef = db.collection('attendance').doc(docId);
+        const attDoc = await attRef.get();
+        
+        if(!attDoc.exists) {
+            // Nếu chưa có, tạo mới và lấy danh sách học sinh mặc định
+            const studentsRef = db.collection('students').where('class', '==', selectedClass);
+            const snapshot = await studentsRef.get();
+            let initialData = { class: selectedClass, subject: selectedSubject, period: selectedPeriod, shift: autoDetectedShift, date: today, records: {} };
+            
+            snapshot.forEach(doc => {
+                initialData.records[doc.data().id] = [];
+            });
+            await attRef.set(initialData);
+        }
+        return attRef;
+    }
+
+    async function loadAttendanceList() {
+        document.getElementById('attendance-list-container').style.display = 'block';
+        
+        // 1. Đảm bảo dữ liệu đã được tạo
+        const attRef = await ensureAttendanceDocReady();
+        
+        // 2. Tải danh sách học sinh để lấy Tên và sắp xếp
+        const selectedClass = document.getElementById('teacher-class').value;
         const studentsRef = db.collection('students').where('class', '==', selectedClass);
         const snapshot = await studentsRef.get();
         let studentsList = [];
         snapshot.forEach(doc => studentsList.push(doc.data()));
         studentsList.sort((a, b) => a.id.localeCompare(b.id));
 
-        const attRef = db.collection('attendance').doc(currentAttendanceDocId);
-        const attDoc = await attRef.get();
-        if(!attDoc.exists) {
-            let initialData = { class: selectedClass, subject: selectedSubject, period: selectedPeriod, shift: autoDetectedShift, date: today, records: {} };
-            studentsList.forEach(hs => initialData.records[hs.id] = []);
-            await attRef.set(initialData);
-        }
-
+        // 3. Lắng nghe thay đổi realtime
         if(unsubscribeSnapshot) unsubscribeSnapshot();
         unsubscribeSnapshot = attRef.onSnapshot(doc => {
             const data = doc.data().records || {};
@@ -672,7 +697,10 @@
     }
 
     async function manualUpdateStatus(studentId, turnOn) {
+        // Luôn sử dụng ID mới nhất
+        await ensureAttendanceDocReady();
         const attRef = db.collection('attendance').doc(currentAttendanceDocId);
+        
         if (turnOn) {
             const nowMs = Date.now();
             const nowStr = new Date().toLocaleTimeString('vi-VN', {hour: '2-digit', minute:'2-digit'});
@@ -689,9 +717,9 @@
     }
 
     // ==========================================
-    // 5. CHỨC NĂNG QUÉT QR - FIX LỖI IPHONE
+    // 5. CHỨC NĂNG QUÉT QR ĐỘC LẬP
     // ==========================================
-    function toggleScanner() {
+    async function toggleScanner() {
         const qrBox = document.getElementById('qr-reader');
         const btn = document.getElementById('btn-toggle-scanner');
 
@@ -702,21 +730,33 @@
                 html5QrCode.clear();
                 qrBox.style.display = 'none';
                 isScannerRunning = false;
-                btn.innerHTML = "📷 Bật Máy Quét QR";
+                btn.innerHTML = "📷 Bật Máy Quét";
                 btn.style.background = "var(--success)";
                 btn.disabled = false;
             }).catch(err => {
                 qrBox.style.display = 'none';
                 isScannerRunning = false;
-                btn.innerHTML = "📷 Bật Máy Quét QR";
+                btn.innerHTML = "📷 Bật Máy Quét";
                 btn.style.background = "var(--success)";
                 btn.disabled = false;
             });
         } else {
-            btn.innerText = "⏳ Đang khởi động...";
+            btn.innerText = "⏳ Đang chuẩn bị dữ liệu...";
             btn.disabled = true;
             
+            try {
+                // Đảm bảo dữ liệu đã sẵn sàng trước khi bật camera
+                await ensureAttendanceDocReady(); 
+            } catch (err) {
+                alert("Lỗi chuẩn bị dữ liệu điểm danh. Vui lòng kiểm tra kết nối mạng.");
+                btn.innerHTML = "📷 Bật Máy Quét";
+                btn.disabled = false;
+                return;
+            }
+
+            btn.innerText = "⏳ Đang khởi động camera...";
             qrBox.style.display = 'block'; 
+            
             setTimeout(() => {
                 if (!html5QrCode) {
                     html5QrCode = new Html5Qrcode("qr-reader");
@@ -729,13 +769,13 @@
                     (errorMessage) => { /* Ignore background logs */ }
                 ).then(() => {
                     isScannerRunning = true;
-                    btn.innerHTML = "❌ Tắt Máy Quét QR";
+                    btn.innerHTML = "❌ Tắt Máy Quét";
                     btn.style.background = "var(--danger)";
                     btn.disabled = false;
                 }).catch((err) => {
                     alert("Lỗi camera: Trình duyệt bị từ chối quyền truy cập hoặc camera đang được ứng dụng khác sử dụng!");
                     qrBox.style.display = 'none';
-                    btn.innerHTML = "📷 Bật Máy Quét QR";
+                    btn.innerHTML = "📷 Bật Máy Quét";
                     btn.style.background = "var(--success)";
                     btn.disabled = false;
                 });
@@ -753,8 +793,10 @@
         
         playBeep();
 
-        const attRef = db.collection('attendance').doc(currentAttendanceDocId);
+        // Luôn gọi ensure để lấy ID đúng nhất của các ô select hiện tại, phòng trường hợp GV đổi lớp khi đang quét
+        const attRef = await ensureAttendanceDocReady(); 
         const doc = await attRef.get();
+        
         if(doc.exists) {
             let allRecords = doc.data().records || {};
             let studentRecords = allRecords[studentId] || [];
