@@ -307,11 +307,11 @@
                 <button id="btn-toggle-scanner" class="action" onclick="toggleScanner()" style="margin: 0;">📷 Bật Máy Quét</button>
             </div>
             
-            <!-- Khu vực Quét QR (Độc lập) -->
+            <!-- Khu vực Quét QR -->
             <div id="scan-toast">✅ Đã điểm danh thành công</div>
             <div id="qr-reader"></div>
 
-            <!-- Khu vực Danh Sách Điểm Danh (Độc lập) -->
+            <!-- Khu vực Danh Sách Điểm Danh -->
             <div id="attendance-list-container" style="display: none;">
                 <div class="table-responsive">
                     <table>
@@ -476,7 +476,6 @@
     }
 
     function logout() {
-        // Tắt camera nếu đang bật
         if(isScannerRunning && html5QrCode) {
             html5QrCode.stop().then(() => {
                 html5QrCode.clear();
@@ -490,7 +489,6 @@
             }
         }
         
-        // Ngắt kết nối lắng nghe Firestore
         if(unsubscribeSnapshot) {
             unsubscribeSnapshot();
             unsubscribeSnapshot = null;
@@ -625,33 +623,6 @@
         if(currentUser.subjects) currentUser.subjects.forEach(s => subjectSelect.add(new Option(s, s)));
     }
 
-    // HÀM DÙNG CHUNG: Đảm bảo CSDL đã có document điểm danh của Tiết/Lớp hiện tại
-    async function ensureAttendanceDocReady() {
-        const selectedClass = document.getElementById('teacher-class').value;
-        const selectedSubject = document.getElementById('teacher-subject').value;
-        const selectedPeriod = document.getElementById('teacher-period').value; 
-        const today = new Date().toISOString().split('T')[0];
-        
-        const docId = `${today}_${selectedClass}_${selectedSubject}_${autoDetectedShift}_T${selectedPeriod}`;
-        currentAttendanceDocId = docId; // Lưu biến toàn cục
-        
-        const attRef = db.collection('attendance').doc(docId);
-        const attDoc = await attRef.get();
-        
-        if(!attDoc.exists) {
-            // Nếu chưa có, tạo mới và lấy danh sách học sinh mặc định
-            const studentsRef = db.collection('students').where('class', '==', selectedClass);
-            const snapshot = await studentsRef.get();
-            let initialData = { class: selectedClass, subject: selectedSubject, period: selectedPeriod, shift: autoDetectedShift, date: today, records: {} };
-            
-            snapshot.forEach(doc => {
-                initialData.records[doc.data().id] = [];
-            });
-            await attRef.set(initialData);
-        }
-        return attRef;
-    }
-
     async function loadAttendanceList() {
         const container = document.getElementById('attendance-list-container');
         const btn = document.getElementById('btn-toggle-list');
@@ -674,23 +645,28 @@
         btn.disabled = true;
 
         try {
-            // 1. Đảm bảo dữ liệu đã được tạo
-            const attRef = await ensureAttendanceDocReady();
-            
-            // 2. Tải danh sách học sinh để lấy Tên và sắp xếp
             const selectedClass = document.getElementById('teacher-class').value;
+            const selectedSubject = document.getElementById('teacher-subject').value;
+            const selectedPeriod = document.getElementById('teacher-period').value; 
+            const today = new Date().toISOString().split('T')[0];
+            
+            currentAttendanceDocId = `${today}_${selectedClass}_${selectedSubject}_${autoDetectedShift}_T${selectedPeriod}`;
+            
+            // Tải danh sách học sinh từ CSDL Học sinh
             const studentsRef = db.collection('students').where('class', '==', selectedClass);
             const snapshot = await studentsRef.get();
             let studentsList = [];
             snapshot.forEach(doc => studentsList.push(doc.data()));
             studentsList.sort((a, b) => a.id.localeCompare(b.id));
 
-            // 3. Lắng nghe thay đổi realtime
+            // Chỉ lắng nghe doc Điểm danh (Không tự động khởi tạo nếu chưa có)
+            const attRef = db.collection('attendance').doc(currentAttendanceDocId);
+            
             if(unsubscribeSnapshot) unsubscribeSnapshot();
             unsubscribeSnapshot = attRef.onSnapshot(doc => {
-                const data = doc.data().records || {};
+                // Nếu doc chưa tồn tại (chưa quét ai), coi như tất cả mảng ghi nhận là rỗng
+                const data = doc.exists ? (doc.data().records || {}) : {};
                 const tbody = document.getElementById('student-list');
-                
                 const fragment = document.createDocumentFragment();
                 
                 studentsList.forEach(hs => {
@@ -738,22 +714,45 @@
     }
 
     async function manualUpdateStatus(studentId, turnOn) {
-        // Luôn sử dụng ID mới nhất
-        await ensureAttendanceDocReady();
+        // Cập nhật lại ID đề phòng GV thay đổi Lớp/Tiết nhưng chưa tắt/mở lại danh sách
+        const selectedClass = document.getElementById('teacher-class').value;
+        const selectedSubject = document.getElementById('teacher-subject').value;
+        const selectedPeriod = document.getElementById('teacher-period').value; 
+        const today = new Date().toISOString().split('T')[0];
+        
+        currentAttendanceDocId = `${today}_${selectedClass}_${selectedSubject}_${autoDetectedShift}_T${selectedPeriod}`;
         const attRef = db.collection('attendance').doc(currentAttendanceDocId);
         
-        if (turnOn) {
-            const nowMs = Date.now();
-            const nowStr = new Date().toLocaleTimeString('vi-VN', {hour: '2-digit', minute:'2-digit'});
+        const doc = await attRef.get();
+        const nowMs = Date.now();
+        const nowStr = new Date().toLocaleTimeString('vi-VN', {hour: '2-digit', minute:'2-digit'});
+        
+        if (!doc.exists) {
+            if (!turnOn) return; // Đang vắng mà bấm đổi thành vắng thì bỏ qua
             
-            const doc = await attRef.get();
+            // Chưa có dữ liệu -> Khởi tạo lần đầu
+            const studentsRef = db.collection('students').where('class', '==', selectedClass);
+            const snapshot = await studentsRef.get();
+            let initialData = { class: selectedClass, subject: selectedSubject, period: selectedPeriod, shift: autoDetectedShift, date: today, records: {} };
+            
+            snapshot.forEach(sDoc => {
+                initialData.records[sDoc.data().id] = [];
+            });
+            
+            // Đánh dấu người vừa được chọn
+            initialData.records[studentId] = [{ time: nowStr + ' (Bù)', ts: nowMs }];
+            await attRef.set(initialData);
+        } else {
+            // Đã có dữ liệu -> Cập nhật bình thường
             let records = doc.data().records[studentId];
             if(!Array.isArray(records)) records = [];
             
-            records.push({ time: nowStr + ' (Bù)', ts: nowMs });
-            await attRef.update({ [`records.${studentId}`]: records });
-        } else {
-            await attRef.update({ [`records.${studentId}`]: [] });
+            if (turnOn) {
+                records.push({ time: nowStr + ' (Bù)', ts: nowMs });
+                await attRef.update({ [`records.${studentId}`]: records });
+            } else {
+                await attRef.update({ [`records.${studentId}`]: [] });
+            }
         }
     }
 
@@ -782,20 +781,15 @@
                 btn.disabled = false;
             });
         } else {
-            btn.innerText = "⏳ Đang chuẩn bị dữ liệu...";
-            btn.disabled = true;
-            
-            try {
-                // Đảm bảo dữ liệu đã sẵn sàng trước khi bật camera
-                await ensureAttendanceDocReady(); 
-            } catch (err) {
-                alert("Lỗi chuẩn bị dữ liệu điểm danh. Vui lòng kiểm tra kết nối mạng.");
-                btn.innerHTML = "📷 Bật Máy Quét";
-                btn.disabled = false;
-                return;
-            }
+            // Xác định trước ID Document để lúc quét gọi chuẩn xác
+            const selectedClass = document.getElementById('teacher-class').value;
+            const selectedSubject = document.getElementById('teacher-subject').value;
+            const selectedPeriod = document.getElementById('teacher-period').value; 
+            const today = new Date().toISOString().split('T')[0];
+            currentAttendanceDocId = `${today}_${selectedClass}_${selectedSubject}_${autoDetectedShift}_T${selectedPeriod}`;
 
             btn.innerText = "⏳ Đang khởi động camera...";
+            btn.disabled = true;
             qrBox.style.display = 'block'; 
             
             setTimeout(() => {
@@ -834,12 +828,48 @@
         
         playBeep();
 
-        // Luôn gọi ensure để lấy ID đúng nhất của các ô select hiện tại, phòng trường hợp GV đổi lớp khi đang quét
-        const attRef = await ensureAttendanceDocReady(); 
+        const attRef = db.collection('attendance').doc(currentAttendanceDocId);
         const doc = await attRef.get();
         
-        if(doc.exists) {
+        if(!doc.exists) {
+            // CHƯA CÓ BẢNG ĐIỂM DANH -> Đây là học sinh đầu tiên được quét
+            const selectedClass = document.getElementById('teacher-class').value;
+            const selectedSubject = document.getElementById('teacher-subject').value;
+            const selectedPeriod = document.getElementById('teacher-period').value; 
+            const today = new Date().toISOString().split('T')[0];
+            
+            const studentsRef = db.collection('students').where('class', '==', selectedClass);
+            const snapshot = await studentsRef.get();
+            
+            let studentExistsInClass = false;
+            let initialData = { class: selectedClass, subject: selectedSubject, period: selectedPeriod, shift: autoDetectedShift, date: today, records: {} };
+            
+            snapshot.forEach(sDoc => {
+                const sId = sDoc.data().id;
+                initialData.records[sId] = [];
+                if (sId === studentId) studentExistsInClass = true;
+            });
+            
+            // NẾU CHỌN NHẦM LỚP (Quét 1 em không thuộc lớp đang chọn) -> CHẶN KHỞI TẠO!
+            if (!studentExistsInClass) {
+                showToast(`❌ [${studentId}] Học sinh KHÔNG thuộc lớp ${selectedClass}! Đã chặn tạo dữ liệu rác.`, true);
+                return;
+            }
+            
+            // HỢP LỆ -> Khởi tạo bảng và ghi nhận
+            initialData.records[studentId] = [{ time: nowStr, ts: nowMs }];
+            await attRef.set(initialData);
+            showToast(`✅ [${studentId}] Ghi nhận lúc ${nowStr}`);
+        } else {
+            // ĐÃ CÓ BẢNG ĐIỂM DANH -> Chỉ cập nhật
             let allRecords = doc.data().records || {};
+            
+            // Nếu người quét không có trong bảng khởi tạo (quét nhầm em lớp khác)
+            if (allRecords[studentId] === undefined) {
+                showToast(`❌ [${studentId}] Học sinh KHÔNG thuộc lớp này!`, true);
+                return;
+            }
+
             let studentRecords = allRecords[studentId] || [];
             if(typeof studentRecords === 'boolean') studentRecords = studentRecords ? [{time: 'N/A', ts: 0}] : [];
             
