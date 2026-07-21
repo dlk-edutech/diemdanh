@@ -303,7 +303,7 @@
 
             <!-- HAI NÚT HOẠT ĐỘNG ĐỘC LẬP -->
             <div class="flex-row" style="margin-bottom: 25px; gap: 12px;">
-                <button class="action secondary" onclick="loadAttendanceList()" style="margin: 0;">📋 Mở Danh Sách</button>
+                <button id="btn-toggle-list" class="action secondary" onclick="loadAttendanceList()" style="margin: 0;">📋 Mở Danh Sách</button>
                 <button id="btn-toggle-scanner" class="action" onclick="toggleScanner()" style="margin: 0;">📷 Bật Máy Quét</button>
             </div>
             
@@ -476,25 +476,35 @@
     }
 
     function logout() {
+        // Tắt camera nếu đang bật
         if(isScannerRunning && html5QrCode) {
             html5QrCode.stop().then(() => {
                 html5QrCode.clear();
             }).catch(e => console.log(e));
             document.getElementById('qr-reader').style.display = 'none';
             isScannerRunning = false;
-            const btn = document.getElementById('btn-toggle-scanner');
-            if(btn) {
-                btn.innerHTML = '📷 Bật Máy Quét';
-                btn.style.background = 'var(--success)';
+            const btnScanner = document.getElementById('btn-toggle-scanner');
+            if(btnScanner) {
+                btnScanner.innerHTML = '📷 Bật Máy Quét';
+                btnScanner.style.background = 'var(--success)';
             }
         }
         
-        if(unsubscribeSnapshot) unsubscribeSnapshot();
+        // Ngắt kết nối lắng nghe Firestore
+        if(unsubscribeSnapshot) {
+            unsubscribeSnapshot();
+            unsubscribeSnapshot = null;
+        }
+        
         currentUser = null;
         document.getElementById('username').value = '';
         
-        // Reset giao diện GV
+        // Reset giao diện danh sách của GV
         document.getElementById('attendance-list-container').style.display = 'none';
+        const btnList = document.getElementById('btn-toggle-list');
+        if(btnList) {
+            btnList.innerHTML = '📋 Mở Danh Sách';
+        }
         
         showScreen('login-screen');
     }
@@ -643,57 +653,88 @@
     }
 
     async function loadAttendanceList() {
-        document.getElementById('attendance-list-container').style.display = 'block';
-        
-        // 1. Đảm bảo dữ liệu đã được tạo
-        const attRef = await ensureAttendanceDocReady();
-        
-        // 2. Tải danh sách học sinh để lấy Tên và sắp xếp
-        const selectedClass = document.getElementById('teacher-class').value;
-        const studentsRef = db.collection('students').where('class', '==', selectedClass);
-        const snapshot = await studentsRef.get();
-        let studentsList = [];
-        snapshot.forEach(doc => studentsList.push(doc.data()));
-        studentsList.sort((a, b) => a.id.localeCompare(b.id));
+        const container = document.getElementById('attendance-list-container');
+        const btn = document.getElementById('btn-toggle-list');
 
-        // 3. Lắng nghe thay đổi realtime
-        if(unsubscribeSnapshot) unsubscribeSnapshot();
-        unsubscribeSnapshot = attRef.onSnapshot(doc => {
-            const data = doc.data().records || {};
-            const tbody = document.getElementById('student-list');
+        // Logic Ẩn/Đóng danh sách
+        if (container.style.display === 'block') {
+            container.style.display = 'none';
+            btn.innerHTML = '📋 Mở Danh Sách';
             
-            const fragment = document.createDocumentFragment();
+            // Hủy lắng nghe realtime khi đóng bảng để tiết kiệm tài nguyên
+            if(unsubscribeSnapshot) {
+                unsubscribeSnapshot();
+                unsubscribeSnapshot = null;
+            }
+            return;
+        }
+
+        // Logic Mở danh sách
+        btn.innerHTML = '⏳ Đang tải...';
+        btn.disabled = true;
+
+        try {
+            // 1. Đảm bảo dữ liệu đã được tạo
+            const attRef = await ensureAttendanceDocReady();
             
-            studentsList.forEach(hs => {
-                let studentRecords = data[hs.id] || [];
-                if(typeof studentRecords === 'boolean') studentRecords = studentRecords ? [{time: 'N/A', ts: 0}] : [];
+            // 2. Tải danh sách học sinh để lấy Tên và sắp xếp
+            const selectedClass = document.getElementById('teacher-class').value;
+            const studentsRef = db.collection('students').where('class', '==', selectedClass);
+            const snapshot = await studentsRef.get();
+            let studentsList = [];
+            snapshot.forEach(doc => studentsList.push(doc.data()));
+            studentsList.sort((a, b) => a.id.localeCompare(b.id));
+
+            // 3. Lắng nghe thay đổi realtime
+            if(unsubscribeSnapshot) unsubscribeSnapshot();
+            unsubscribeSnapshot = attRef.onSnapshot(doc => {
+                const data = doc.data().records || {};
+                const tbody = document.getElementById('student-list');
                 
-                const isPresent = studentRecords.length > 0;
-                let timeBadges = '';
-                if(isPresent) {
-                    timeBadges = studentRecords.map(r => `<span class="time-badge">${r.time}</span>`).join('');
-                }
+                const fragment = document.createDocumentFragment();
+                
+                studentsList.forEach(hs => {
+                    let studentRecords = data[hs.id] || [];
+                    if(typeof studentRecords === 'boolean') studentRecords = studentRecords ? [{time: 'N/A', ts: 0}] : [];
+                    
+                    const isPresent = studentRecords.length > 0;
+                    let timeBadges = '';
+                    if(isPresent) {
+                        timeBadges = studentRecords.map(r => `<span class="time-badge">${r.time}</span>`).join('');
+                    }
 
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td><strong>${hs.id}</strong></td>
-                    <td>${hs.name}</td>
-                    <td>
-                        <div class="${isPresent ? 'status-present' : 'status-absent'}">${isPresent ? 'Có mặt' : 'Vắng'}</div>
-                        <div>${timeBadges}</div>
-                    </td>
-                    <td>
-                        <button class="action ${isPresent ? 'secondary' : ''}" style="padding: 6px 12px; font-size: 0.85rem; width: 100%; margin: 0;" onclick="manualUpdateStatus('${hs.id}', ${!isPresent})">
-                            Đổi thành ${isPresent ? 'Vắng' : 'Có mặt'}
-                        </button>
-                    </td>
-                `;
-                fragment.appendChild(tr);
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td><strong>${hs.id}</strong></td>
+                        <td>${hs.name}</td>
+                        <td>
+                            <div class="${isPresent ? 'status-present' : 'status-absent'}">${isPresent ? 'Có mặt' : 'Vắng'}</div>
+                            <div>${timeBadges}</div>
+                        </td>
+                        <td>
+                            <button class="action ${isPresent ? 'secondary' : ''}" style="padding: 6px 12px; font-size: 0.85rem; width: 100%; margin: 0;" onclick="manualUpdateStatus('${hs.id}', ${!isPresent})">
+                                Đổi thành ${isPresent ? 'Vắng' : 'Có mặt'}
+                            </button>
+                        </td>
+                    `;
+                    fragment.appendChild(tr);
+                });
+                
+                tbody.innerHTML = '';
+                tbody.appendChild(fragment);
             });
-            
-            tbody.innerHTML = '';
-            tbody.appendChild(fragment);
-        });
+
+            // Hiển thị UI và đổi nút thành Đóng
+            container.style.display = 'block';
+            btn.innerHTML = '❌ Đóng Danh Sách';
+
+        } catch (error) {
+            alert("Lỗi tải danh sách, vui lòng thử lại!");
+            console.error(error);
+            btn.innerHTML = '📋 Mở Danh Sách';
+        } finally {
+            btn.disabled = false;
+        }
     }
 
     async function manualUpdateStatus(studentId, turnOn) {
