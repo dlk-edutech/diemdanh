@@ -211,7 +211,6 @@
     </style>
 </head>
 <body>
-
 <div class="main-wrapper">
     <div class="container">
         <h1 id="main-title">Hệ Thống Điểm Danh</h1>
@@ -380,421 +379,6 @@
         apiKey: "AIzaSyD6w6Rx3R_Zl1f4ONTfk4zNlyxEdDVEM1w",
         authDomain: "diemdanhs1tp.firebaseapp.com",
         databaseURL: "https://diemdanhs1tp-default-rtdb.asia-southeast1.firebasedatabase.app",
-        projectId: "diemdanhs1tp",
-        storageBucket: "diemdanhs1tp.firebasestorage.app",
-        messagingSenderId: "557913057858",
-        appId: "1:557913057858:web:509cf8f62cfdd325155bdb"
-    };
-
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.firestore();
-
-    let currentRole = 'teacher';
-    let currentUser = null;
-    let html5QrCode = null;
-    let isScannerRunning = false;
-    let currentAttendanceDocId = null;
-    let unsubscribeSnapshot = null;
-    let recentScans = {}; 
-    let toastTimeout = null;
-    let autoDetectedShift = "Sáng";
-
-    // ==========================================
-    // ÂM THANH & THÔNG BÁO
-    // ==========================================
-    function playBeep() {
-        try {
-            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            const gainNode = audioCtx.createGain();
-            Để đáp ứng yêu cầu của bạn, tôi đã điều chỉnh lại thuật toán hiển thị trong hàm `setupParentDashboard()`. 
-
-Bây giờ, hệ thống sẽ lọc và **chỉ hiển thị những môn học/tiết học đã bắt đầu điểm danh** (tức là trạng thái của con chỉ có thể là "Có mặt" hoặc "Vắng"). Những tiết học chưa diễn ra (trạng thái "Chưa điểm danh") sẽ được ẩn đi hoàn toàn trên màn hình của phụ huynh để tránh gây rối mắt. Nếu tất cả các môn trong ngày đều chưa điểm danh, hệ thống sẽ báo rõ là *"Hôm nay các môn chưa có dữ liệu điểm danh (Chưa bắt đầu tiết học)"*.
-
-Dưới đây là toàn bộ mã nguồn (full code) đã hoàn thiện và giữ đúng thông tin bản quyền của bạn:
-
-```html
-<!DOCTYPE html>
-<html lang="vi">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Hệ Thống Điểm Danh Trực Tuyến</title>
-    <!-- Fonts -->
-    <link href="[https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap](https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap)" rel="stylesheet">
-    
-    <!-- Firebase App & Firestore -->
-    <script src="[https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js](https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js)"></script>
-    <script src="[https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js](https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js)"></script>
-    <!-- Thư viện quét QR -->
-    <script src="[https://unpkg.com/html5-qrcode](https://unpkg.com/html5-qrcode)" type="text/javascript"></script>
-    <!-- Thư viện đọc/ghi file Excel -->
-    <script src="[https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js](https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js)"></script>
-    
-    <style>
-        :root { 
-            --primary: #3b82f6; 
-            --primary-hover: #2563eb;
-            --success: #10b981;
-            --success-hover: #059669;
-            --danger: #ef4444;
-            --danger-hover: #dc2626;
-            --secondary: #64748b;
-            --bg-color: #f1f5f9; 
-            --card-bg: #ffffff;
-            --text-main: #0f172a; 
-            --text-muted: #64748b;
-            --border-color: #e2e8f0;
-            --radius-md: 8px;
-            --radius-lg: 12px;
-            --shadow-sm: 0 1px 3px rgba(0,0,0,0.1);
-            --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
-            --transition: all 0.2s ease-in-out;
-        }
-        
-        body { 
-            font-family: 'Inter', system-ui, -apple-system, sans-serif; 
-            background: var(--bg-color); 
-            color: var(--text-main); 
-            margin: 0; 
-            padding: 20px 10px; 
-            display: flex;
-            flex-direction: column;
-            min-height: 100vh;
-        }
-
-        .main-wrapper {
-            flex: 1;
-        }
-
-        .container { 
-            max-width: 850px; 
-            margin: 0 auto; 
-            background: var(--card-bg); 
-            padding: 25px 30px; 
-            border-radius: var(--radius-lg); 
-            box-shadow: var(--shadow-md); 
-            animation: fadeIn 0.3s ease-out;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        h1, h2, h3 { color: var(--text-main); margin-top: 0; }
-        h1 { text-align: center; color: var(--primary); font-weight: 700; margin-bottom: 30px; }
-        h2 { font-size: 1.5rem; border-bottom: 2px solid var(--border-color); padding-bottom: 10px; margin-bottom: 20px;}
-        h3 { font-size: 1.1rem; color: var(--text-muted); margin-top: 25px; margin-bottom: 15px;}
-
-        .screen { display: none; }
-        .active { display: block; animation: fadeIn 0.3s ease-out; }
-
-        .form-group { margin-bottom: 18px; width: 100%; }
-        label { display: block; font-weight: 500; margin-bottom: 6px; color: var(--text-main); font-size: 0.95rem; }
-        input, select { 
-            width: 100%; 
-            padding: 12px; 
-            border: 1px solid var(--border-color); 
-            border-radius: var(--radius-md); 
-            box-sizing: border-box; 
-            font-family: inherit;
-            transition: var(--transition);
-            font-size: 0.95rem;
-        }
-        input:focus, select:focus {
-            outline: none;
-            border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
-        }
-
-        button { 
-            width: 100%; 
-            padding: 12px 16px; 
-            background: var(--primary); 
-            color: white; 
-            border: none; 
-            border-radius: var(--radius-md); 
-            font-weight: 600; 
-            font-size: 1rem;
-            cursor: pointer; 
-            margin-top: 10px; 
-            transition: var(--transition); 
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-        }
-        button:hover { background: var(--primary-hover); transform: translateY(-1px); }
-        button:active { transform: translateY(0); }
-        button:disabled { background: #94a3b8 !important; cursor: not-allowed; transform: none; }
-        button.logout { background: var(--danger); }
-        button.logout:hover { background: var(--danger-hover); }
-        button.action { width: auto; padding: 10px 20px; background: var(--success); }
-        button.action:hover { background: var(--success-hover); }
-        button.secondary { background: var(--secondary); }
-        button.secondary:hover { background: #475569; }
-
-        table { width: 100%; border-collapse: collapse; margin-top: 15px; border-radius: var(--radius-md); overflow: hidden; box-shadow: var(--shadow-sm); min-width: 500px; }
-        .table-responsive { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-        th, td { border-bottom: 1px solid var(--border-color); padding: 12px 15px; text-align: left; font-size: 0.95rem; }
-        th { background: #f8fafc; font-weight: 600; color: var(--text-muted); text-transform: uppercase; font-size: 0.85rem; letter-spacing: 0.05em; white-space: nowrap; }
-        tr:last-child td { border-bottom: none; }
-        tr:hover td { background-color: #f8fafc; }
-
-        .status-present { color: var(--success); font-weight: 600; display: flex; align-items: center; gap: 4px; }
-        .status-present::before { content: '●'; font-size: 1.2em; }
-        .status-absent { color: var(--danger); font-weight: 600; display: flex; align-items: center; gap: 4px;}
-        .status-absent::before { content: '●'; font-size: 1.2em; }
-        .status-pending { color: var(--text-muted); font-style: italic; display: flex; align-items: center; gap: 4px; }
-        .status-pending::before { content: '○'; font-size: 1.2em; }
-
-        #qr-reader { 
-            width: 100%; 
-            max-width: 450px; 
-            margin: 0 auto 20px auto; 
-            display: none; 
-            border-radius: var(--radius-lg); 
-            min-height: 250px; 
-            background: #1e293b; 
-            overflow: hidden; 
-            position: relative;
-            box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
-        }
-        #qr-reader video { object-fit: cover; border-radius: var(--radius-lg); }
-
-        .nav-tabs { display: flex; gap: 8px; margin-bottom: 25px; background: #f1f5f9; padding: 6px; border-radius: var(--radius-md); }
-        .nav-tabs button { flex: 1; background: transparent; color: var(--text-muted); margin: 0; padding: 10px; font-weight: 600; font-size: 0.95rem; }
-        .nav-tabs button:hover { background: rgba(0,0,0,0.05); transform: none; }
-        .nav-tabs button.active-tab { background: var(--card-bg); color: var(--primary); box-shadow: var(--shadow-sm); }
-
-        .excel-guide { background: #eff6ff; padding: 15px; border-radius: var(--radius-md); font-size: 0.9rem; margin-bottom: 15px; border: 1px solid #bfdbfe; color: #1e3a8a; line-height: 1.5; }
-        .flex-row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
-        .flex-row > * { flex: 1; min-width: 200px; }
-        .flex-bottom { display: flex; gap: 15px; margin-top: 35px; padding-top: 20px; border-top: 1px solid var(--border-color); }
-        .flex-bottom button { margin-top: 0; flex: 1; }
-        
-        .welcome-text { text-align: center; color: var(--text-muted); margin-top: -20px; margin-bottom: 30px; font-size: 1.1rem; }
-        
-        #scan-toast {
-            display: none; background: var(--success); color: white; padding: 14px; 
-            border-radius: var(--radius-md); text-align: center; font-weight: 600; 
-            margin-bottom: 20px; font-size: 1.05rem; box-shadow: var(--shadow-md);
-            animation: slideDown 0.3s ease-out;
-            position: sticky; top: 10px; z-index: 1000;
-        }
-        @keyframes slideDown { from { transform: translateY(-10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-
-        .time-badge { background: #dcfce7; color: #166534; padding: 3px 8px; border-radius: 99px; font-size: 0.85rem; margin-right: 5px; display: inline-block; margin-top: 6px; font-weight: 500; }
-        .auto-shift { background: #f8fafc; border: 1px solid var(--border-color); padding: 12px; border-radius: var(--radius-md); font-weight: 600; color: var(--primary); text-align: center; height: 100%; box-sizing: border-box; display: flex; align-items: center; justify-content: center; }
-
-        /* TỐI ƯU HÓA HIỂN THỊ DI ĐỘNG (RESPONSIVE) */
-        @media (max-width: 600px) {
-            body { padding: 10px 5px; }
-            .container { padding: 20px 15px; margin: 0 5px; border-radius: var(--radius-md); }
-            
-            h1 { font-size: 1.4rem; margin-bottom: 20px; }
-            h2 { font-size: 1.2rem; }
-            h3 { font-size: 1rem; }
-            
-            .nav-tabs { flex-wrap: wrap; }
-            .nav-tabs button { font-size: 0.85rem; padding: 8px 4px; }
-            
-            .flex-row { flex-direction: column; gap: 15px; align-items: stretch; }
-            .flex-row > * { min-width: 100%; width: 100%; margin-bottom: 0 !important; }
-            
-            .flex-bottom { flex-direction: column; gap: 12px; }
-            .flex-bottom button { width: 100%; margin: 0; }
-            
-            th, td { padding: 10px 8px; font-size: 0.85rem; }
-            
-            .excel-guide { font-size: 0.85rem; padding: 12px; }
-            .welcome-text { font-size: 1rem; margin-bottom: 20px; }
-            
-            .auto-shift { padding: 10px; }
-        }
-
-        /* Footer Copyright */
-        .footer-copyright {
-            text-align: center;
-            padding: 20px 10px;
-            color: var(--text-muted);
-            font-size: 0.85rem;
-            margin-top: auto;
-            line-height: 1.5;
-        }
-        .footer-copyright strong { color: var(--text-main); font-size: 0.95rem; }
-    </style>
-</head>
-<body>
-
-<div class="main-wrapper">
-    <div class="container">
-        <h1 id="main-title">Hệ Thống Điểm Danh</h1>
-
-        <!-- MÀN HÌNH ĐĂNG NHẬP -->
-        <div id="login-screen" class="screen active">
-            <div class="nav-tabs">
-                <button class="active-tab" onclick="switchLogin('teacher')">Giáo viên</button>
-                <button onclick="switchLogin('parent')">Phụ huynh</button>
-                <button onclick="switchLogin('admin')">Quản trị</button>
-            </div>
-            
-            <div class="form-group">
-                <label id="lbl-username">Mã Giáo Viên</label>
-                <input type="text" id="username" placeholder="Nhập mã đăng nhập..." autocomplete="off">
-            </div>
-            <button onclick="handleLogin()">
-                <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path><polyline points="10 17 15 12 10 7"></polyline><line x1="15" y1="12" x2="3" y2="12"></line></svg>
-                Đăng Nhập
-            </button>
-        </div>
-
-        <!-- MÀN HÌNH ADMIN -->
-        <div id="admin-screen" class="screen">
-            <h2>Khu Vực Quản Trị</h2>
-            
-            <h3>1. Nạp danh sách Học Sinh</h3>
-            <div class="excel-guide">
-                <strong>Cấu trúc file (Bỏ qua dòng tiêu đề):</strong><br>
-                Cột A: Mã HS | Cột B: Lớp | Cột C: Họ Tên | Cột D: Mã CMHS
-            </div>
-            <div class="flex-row">
-                <div class="form-group" style="margin:0; flex: 2;">
-                    <input type="file" id="excel-students" accept=".xlsx, .xls">
-                </div>
-                <button class="action secondary" onclick="downloadStudentSample()" style="margin: 0; flex: 1;">📥 Tải Mẫu</button>
-            </div>
-            <button class="action" style="width: 100%; margin-top: 15px;" onclick="importStudentsFromExcel(this)">Nạp Danh Sách Học Sinh</button>
-
-            <h3 style="margin-top: 40px;">2. Nạp danh sách Giáo Viên</h3>
-            <div class="excel-guide">
-                <strong>Cấu trúc file (Bỏ qua dòng tiêu đề):</strong><br>
-                Cột A: Mã GV | Cột B: Họ và tên | Cột C: Môn dạy | Cột D: Lớp dạy
-            </div>
-            <div class="flex-row">
-                <div class="form-group" style="margin:0; flex: 2;">
-                    <input type="file" id="excel-teachers" accept=".xlsx, .xls">
-                </div>
-                <button class="action secondary" onclick="downloadTeacherSample()" style="margin: 0; flex: 1;">📥 Tải Mẫu</button>
-            </div>
-            <button class="action" style="width: 100%; margin-top: 15px;" onclick="importTeachersFromExcel(this)">Nạp Danh Sách Giáo Viên</button>
-
-            <div class="flex-bottom">
-                <button class="logout" onclick="logout()">Đăng Xuất</button>
-            </div>
-        </div>
-
-        <!-- MÀN HÌNH GIÁO VIÊN -->
-        <div id="teacher-screen" class="screen">
-            <h2>Điểm Danh Lớp Học</h2>
-            <div class="welcome-text">Xin chào, <span id="t-teacher-name" style="font-weight: 700; color: var(--primary);"></span></div>
-            
-            <!-- Phần chọn Lớp, Môn, Tiết -->
-            <div class="flex-row" style="margin-bottom: 15px;">
-                <div class="form-group">
-                    <label>Chọn Lớp:</label>
-                    <select id="teacher-class"></select>
-                </div>
-                <div class="form-group">
-                    <label>Chọn Môn:</label>
-                    <select id="teacher-subject"></select>
-                </div>
-            </div>
-            
-            <div class="flex-row" style="margin-bottom: 25px;">
-                <div class="form-group">
-                    <label>Ca học (Tự động):</label>
-                    <div id="teacher-shift" class="auto-shift">Đang lấy giờ...</div>
-                </div>
-                <div class="form-group">
-                    <label>Chọn Tiết:</label>
-                    <select id="teacher-period">
-                        <option value="1">Tiết 1</option>
-                        <option value="2">Tiết 2</option>
-                        <option value="3">Tiết 3</option>
-                        <option value="4">Tiết 4</option>
-                        <option value="5">Tiết 5</option>
-                    </select>
-                </div>
-            </div>
-
-            <!-- HAI NÚT HOẠT ĐỘNG ĐỘC LẬP -->
-            <div class="flex-row" style="margin-bottom: 25px; gap: 12px;">
-                <button id="btn-toggle-list" class="action secondary" onclick="loadAttendanceList()" style="margin: 0;">📋 Mở Danh Sách</button>
-                <button id="btn-toggle-scanner" class="action" onclick="toggleScanner()" style="margin: 0;">📷 Bật Máy Quét</button>
-            </div>
-            
-            <!-- Khu vực Quét QR -->
-            <div id="scan-toast">✅ Đã điểm danh thành công</div>
-            <div id="qr-reader"></div>
-
-            <!-- Khu vực Danh Sách Điểm Danh -->
-            <div id="attendance-list-container" style="display: none;">
-                <div class="table-responsive">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Mã HS</th>
-                                <th>Họ Tên</th>
-                                <th>Trạng thái & Thời gian</th>
-                                <th style="width: 120px;">Thao tác</th>
-                            </tr>
-                        </thead>
-                        <tbody id="student-list"></tbody>
-                    </table>
-                </div>
-            </div>
-
-            <div class="flex-bottom">
-                <button class="action secondary" onclick="promptChangeLoginCode('teachers')">🔑 Đổi Mã Đăng Nhập</button>
-                <button class="logout" onclick="logout()">Đăng Xuất</button>
-            </div>
-        </div>
-
-        <!-- MÀN HÌNH PHỤ HUYNH -->
-        <div id="parent-screen" class="screen">
-            <h2>Thông tin Điểm Danh của Con</h2>
-            
-            <div style="background: #eff6ff; padding: 20px; border-radius: var(--radius-md); margin-bottom: 25px; border: 1px solid #bfdbfe;">
-                <p style="margin: 0 0 10px 0;"><strong>Học sinh:</strong> <span id="p-student-name" style="color: var(--primary); font-size: 1.1rem; font-weight: 600;">...</span></p>
-                <p style="margin: 0;"><strong>Lớp:</strong> <span id="p-student-class">...</span></p>
-            </div>
-
-            <h3>Tình trạng hôm nay (<span id="today-date" style="color:var(--primary);"></span>)</h3>
-            <div class="table-responsive">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Môn học (Tiết/Ca)</th>
-                            <th>Chi tiết điểm danh</th>
-                        </tr>
-                    </thead>
-                    <tbody id="parent-attendance-list"></tbody>
-                </table>
-            </div>
-
-            <div class="flex-bottom">
-                <button class="action secondary" onclick="promptChangeLoginCode('parents')">🔑 Đổi Mã Đăng Nhập</button>
-                <button class="logout" onclick="logout()">Đăng Xuất</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- FOOTER BẢN QUYỀN -->
-<footer class="footer-copyright">
-    <strong>Dlk Edu Tech</strong><br>
-    Phát triển bởi tranhongdan@tranphudlk.edu.vn
-</footer>
-
-<script>
-    // ==========================================
-    // 1. CẤU HÌNH FIREBASE 
-    // ==========================================
-    const firebaseConfig = {
-        apiKey: "AIzaSyD6w6Rx3R_Zl1f4ONTfk4zNlyxEdDVEM1w",
-        authDomain: "diemdanhs1tp.firebaseapp.com",
-        databaseURL: "[https://diemdanhs1tp-default-rtdb.asia-southeast1.firebasedatabase.app](https://diemdanhs1tp-default-rtdb.asia-southeast1.firebasedatabase.app)",
         projectId: "diemdanhs1tp",
         storageBucket: "diemdanhs1tp.firebasestorage.app",
         messagingSenderId: "557913057858",
@@ -1359,11 +943,8 @@ Dưới đây là toàn bộ mã nguồn (full code) đã hoàn thiện và gi�
             return periodA - periodB;
         });
 
-        let displayedCount = 0;
-
         attendanceList.forEach(data => {
             let classHasAnyPresent = false;
-            // Kiểm tra xem môn này đã có ai điểm danh chưa (nếu chưa thì trạng thái là "Chưa điểm danh")
             for (const key in data.records) {
                 if (Array.isArray(data.records[key]) && data.records[key].length > 0) {
                     classHasAnyPresent = true;
@@ -1371,9 +952,9 @@ Dưới đây là toàn bộ mã nguồn (full code) đã hoàn thiện và gi�
                 }
             }
 
-            // MỚI: CHỈ THỂ HIỆN TRÊN GIAO DIỆN PHỤ HUYNH KHI TRẠNG THÁI LÀ VẮNG HOẶC CÓ MẶT
+            // ĐIỀU CHỈNH: Bỏ qua (không hiển thị) nếu tiết học này chưa được điểm danh
             if (!classHasAnyPresent) {
-                return; // Bỏ qua, không in ra bảng
+                return;
             }
 
             let studentRecords = data.records[currentUser.studentId] || [];
@@ -1381,6 +962,7 @@ Dưới đây là toàn bộ mã nguồn (full code) đã hoàn thiện và gi�
             
             let statusHtml = '';
             
+            // Do đã lọc "Chưa điểm danh" ở trên, lúc này chỉ còn trạng thái Có mặt hoặc Vắng
             if(studentRecords.length > 0) {
                 const timeBadges = studentRecords.map(r => `<span class="time-badge">${r.time}</span>`).join('');
                 statusHtml = `<div class="status-present">Có mặt</div><div>${timeBadges}</div>`;
@@ -1393,14 +975,14 @@ Dưới đây là toàn bộ mã nguồn (full code) đã hoàn thiện và gi�
             const tr = document.createElement('tr');
             tr.innerHTML = `<td><strong>${data.subject}</strong>${periodText}</td><td>${statusHtml}</td>`;
             fragment.appendChild(tr);
-            displayedCount++;
         });
 
-        if (displayedCount === 0) {
-             tbody.innerHTML = '<tr><td colspan="2" style="text-align: center; color: var(--text-muted); padding: 20px;">Hôm nay các môn chưa có dữ liệu điểm danh (Chưa bắt đầu tiết học).</td></tr>';
+        // Kiểm tra xem sau khi lọc có còn tiết nào để hiển thị không
+        if (fragment.children.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="2" style="text-align: center; color: var(--text-muted); padding: 20px;">Các tiết học hôm nay chưa được giáo viên điểm danh.</td></tr>';
         } else {
-             tbody.innerHTML = '';
-             tbody.appendChild(fragment);
+            tbody.innerHTML = '';
+            tbody.appendChild(fragment);
         }
     }
 </script>
